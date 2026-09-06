@@ -108,6 +108,56 @@ parsing fixes therefore remain sanitizer-verified rather than
 hardware-verified; what this run does show is that 0004 causes no regression
 in the verify path.
 
+## Hardware run — re-enroll experiment (patch 0002 delete, and a reachability finding)
+
+`scripts/verify-reenroll-test.sh` was run to reach `ENROLL_ATTEMPT_DELETE` and
+hardware-verify patch 0004 at that call site. **It did not reach that state**,
+and the reason is itself a result.
+
+What the journal shows (`logs/20260906T111322Z_reenroll-fprintd-deletes-first.txt`):
+
+```
+fprintd: Deleting enrolled finger right-index-finger for user jvikramsrd
+fprintd: [elanmoc2] New delete operation
+fprintd: Deleting finger 0 (user id 34 bytes)
+fprintd: Finger 0 deleted
+fprintd: [elanmoc2] DELETE_NUM_STATES completed successfully
+fprintd: [elanmoc2] New clear storage operation
+fprintd: Sent sensor wipe command, sensor will hang for ~5 seconds
+fprintd: [elanmoc2] CLEAR_STORAGE_NUM_STATES completed successfully
+fprintd: [elanmoc2] New enroll operation
+fprintd: Enrolled count is 0, proceeding with enroll stage
+   ... 8 stages ... enroll-completed
+```
+
+Confirmed on hardware by this run:
+
+| Result | Evidence |
+|---|---|
+| **Patch 0002's `delete` works on `0c00`** | `Deleting finger 0 (user id 34 bytes)` → `Finger 0 deleted` → SSM completed successfully |
+| **`clear_storage` works on `0c00`** | wipe sent, enrolled count re-read as 0, SSM completed successfully |
+| A full enroll cycle completes | 8 stages + commit; 1 print before, 1 after; no coredump |
+
+**Reachability finding.** Because patch 0002 adds `dev_class->delete`, fprintd
+deletes the existing print through the delete API and *then* enrolls. The
+driver's own collision path — `ENROLL_EARLY_REENROLL_CHECK` →
+`ENROLL_GET_ENROLLED_FINGER_INFO` → `ENROLL_ATTEMPT_DELETE` — is therefore
+never entered through fprintd. On the **unpatched** MR branch there is no
+`delete`, so fprintd cannot delete first and the driver must handle the
+collision itself; that is the route by which a routine re-enroll wiped the
+sensor on `0c00`. Patch 0002 does not merely guard that path, it removes its
+reachability for fprintd users.
+
+**Script defect found and fixed in the same run.** The first version matched
+the bare prefix `Deleting enrolled finger`, which also matches fprintd's own
+`"Deleting enrolled finger %s for user %s"` (fprintd `device.c`), distinct from
+the driver's `"Deleting enrolled finger %d"` (`elanmoc2.c`). It therefore
+reported `ENROLL_ATTEMPT_DELETE` as entered while its predecessor states read
+`no` — an impossible progression. The marker is now anchored on the numeric
+finger index. The run was re-scored with the fixed marker and correctly reports
+the state as not entered. Note the verdict logic still refused to pass, so the
+false positive never produced a false PASSED.
+
 ## Packaging
 
 ```sh
@@ -121,10 +171,12 @@ the binary.
 
 ## Not yet tested
 
-- **Patch 0004 on hardware.** The re-enroll path that reaches
-  `ENROLL_ATTEMPT_DELETE` on `0c00` has not been re-exercised since the fix.
-  Doing so would previously have wiped the sensor (0002 stops that) and then
-  crashed (0004 stops that).
+- **Patch 0004 at the `ENROLL_ATTEMPT_DELETE` call site.** Still
+  sanitizer-verified only. As above, that state is unreachable through fprintd
+  once `delete` exists, so exercising it needs a libfprint client that enrolls
+  without deleting first. The other call site,
+  `IDENTIFY_CHECK_FINGER_INFO`, is unreachable on `0c00` for a different
+  reason: identify never completes (§4).
 - **`0c4c`, `0c5e`, `0c7c`, `0c90`.** No hardware here. Patch 0004 is
   device-independent, but the `0c5e` offset-3 path is only ASan-tested.
 - **Identify on `0c00`.** Still blocked upstream of these patches by the

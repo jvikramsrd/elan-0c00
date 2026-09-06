@@ -1,0 +1,196 @@
+# Re-enroll experiment on 04f3:0c00 — 2026-09-06 16:40 IST
+# Library: libfprint-elanmoc2-0c00 1.94.9+11+g11f0316d-1 (MR !330 @ 11f0316d + 0002/0003/0004)
+# Command: sudo ./scripts/verify-reenroll-test.sh   (fprintd-enroll -f right-index-finger)
+# Outcome: enroll SUCCEEDED (8 stages + commit); 1 print before, 1 after; no coredump.
+#
+# ENROLL_ATTEMPT_DELETE was NOT entered. fprintd deleted the existing print
+# itself, via the driver's delete method, then enrolled fresh.
+
+Sep 06 16:40:09 omarchy systemd[1]: fprintd.service: Deactivated successfully.
+Sep 06 16:40:10 omarchy fprintd[29517]: About to load configuration file '/etc/fprintd.conf'
+Sep 06 16:40:10 omarchy fprintd[29517]: Launching FprintObject
+Sep 06 16:40:10 omarchy fprintd[29517]: Initializing FpContext (libfprint version 1.94.9)
+Sep 06 16:40:10 omarchy fprintd[29517]: Preparing devices for resume
+Sep 06 16:40:10 omarchy fprintd[29517]: Device reported probe completion
+Sep 06 16:40:10 omarchy fprintd[29517]: Got delay inhibitor for sleep.
+Sep 06 16:40:10 omarchy fprintd[29517]: Completing action FPI_DEVICE_ACTION_PROBE in idle!
+Sep 06 16:40:10 omarchy fprintd[29517]: Device ELAN Match-on-Chip 2 scan type changed to 'press'
+Sep 06 16:40:10 omarchy fprintd[29517]: Device ELAN Match-on-Chip 2 enroll stages changed to 9
+Sep 06 16:40:10 omarchy fprintd[29517]: Finger present 0
+Sep 06 16:40:10 omarchy fprintd[29517]: Finger needed 0
+Sep 06 16:40:10 omarchy fprintd[29517]: entering main loop
+Sep 06 16:40:10 omarchy fprintd[29517]: D-Bus service launched with name: net.reactivated.Fprint
+Sep 06 16:40:10 omarchy fprintd[29517]: Device reported open completion
+Sep 06 16:40:10 omarchy fprintd[29517]: Completing action FPI_DEVICE_ACTION_OPEN in idle!
+Sep 06 16:40:10 omarchy fprintd[29517]: claimed device 0
+Sep 06 16:40:10 omarchy fprintd[29517]: file_storage_print_data_load(): loaded '/var/lib/fprint/jvikramsrd/elanmoc2/0/7' Success
+Sep 06 16:40:10 omarchy fprintd[29517]: Deleting enrolled finger right-index-finger for user jvikramsrd
+Sep 06 16:40:10 omarchy fprintd[29517]: file_storage_discover_prints() for user 'jvikramsrd' in '/var/lib/fprint/jvikramsrd/elanmoc2/0'
+Sep 06 16:40:10 omarchy fprintd[29517]: file_storage_discover_prints() for user 'jvikramsrd' in '/var/lib/fprint/jvikramsrd/elanmoc2/0'
+Sep 06 16:40:10 omarchy fprintd[29517]: file_storage_print_data_load(): loaded '/var/lib/fprint/jvikramsrd/elanmoc2/0/7' Success
+Sep 06 16:40:10 omarchy fprintd[29517]: [elanmoc2] New delete operation
+Sep 06 16:40:10 omarchy fprintd[29517]: [elanmoc2] DELETE_NUM_STATES entering state 0
+Sep 06 16:40:10 omarchy fprintd[29517]: Deleting finger 0 (user id 34 bytes)
+Sep 06 16:40:11 omarchy fprintd[29517]: [elanmoc2] DELETE_NUM_STATES entering state 1
+Sep 06 16:40:11 omarchy fprintd[29517]: Finger 0 deleted
+Sep 06 16:40:11 omarchy fprintd[29517]: Device reported deletion completion
+Sep 06 16:40:11 omarchy fprintd[29517]: [elanmoc2] DELETE_NUM_STATES completed successfully
+Sep 06 16:40:11 omarchy fprintd[29517]: Completing action FPI_DEVICE_ACTION_DELETE in idle!
+Sep 06 16:40:11 omarchy fprintd[29517]: file_storage_print_data_delete(): unlink("/var/lib/fprint/jvikramsrd/elanmoc2/0/7") Success
+Sep 06 16:40:11 omarchy fprintd[29517]: file_storage_discover_prints() for user 'jvikramsrd' in '/var/lib/fprint/jvikramsrd/elanmoc2/0'
+Sep 06 16:40:11 omarchy fprintd[29517]: start enrollment device 0 finger 7
+Sep 06 16:40:11 omarchy fprintd[29517]: [elanmoc2] New clear storage operation
+Sep 06 16:40:11 omarchy fprintd[29517]: [elanmoc2] CLEAR_STORAGE_NUM_STATES entering state 0
+Sep 06 16:40:11 omarchy fprintd[29517]: Sent sensor wipe command, sensor will hang for ~5 seconds
+Sep 06 16:40:11 omarchy fprintd[29517]: [elanmoc2] CLEAR_STORAGE_NUM_STATES entering state 1
+Sep 06 16:40:11 omarchy fprintd[29517]: Querying number of enrolled fingers
+Sep 06 16:40:11 omarchy fprintd[29517]: Sent query for number of enrolled fingers
+Sep 06 16:40:11 omarchy fprintd[29517]: [elanmoc2] CLEAR_STORAGE_NUM_STATES entering state 2
+Sep 06 16:40:11 omarchy fprintd[29517]: Device reported deletion completion
+Sep 06 16:40:11 omarchy fprintd[29517]: [elanmoc2] CLEAR_STORAGE_NUM_STATES completed successfully
+Sep 06 16:40:11 omarchy fprintd[29517]: Completing action FPI_DEVICE_ACTION_CLEAR_STORAGE in idle!
+Sep 06 16:40:11 omarchy fprintd[29517]: [elanmoc2] New identify/verify operation
+Sep 06 16:40:11 omarchy fprintd[29517]: [elanmoc2] IDENTIFY_NUM_STATES entering state 0
+Sep 06 16:40:11 omarchy fprintd[29517]: Querying number of enrolled fingers
+Sep 06 16:40:11 omarchy fprintd[29517]: Sent query for number of enrolled fingers
+Sep 06 16:40:11 omarchy fprintd[29517]: [elanmoc2] IDENTIFY_NUM_STATES entering state 1
+Sep 06 16:40:11 omarchy fprintd[29517]: No fingers enrolled, no need to identify finger
+Sep 06 16:40:11 omarchy fprintd[29517]: Device reported identify result
+Sep 06 16:40:11 omarchy fprintd[29517]: Device reported identify completion
+Sep 06 16:40:11 omarchy fprintd[29517]: [elanmoc2] IDENTIFY_NUM_STATES completed successfully
+Sep 06 16:40:11 omarchy fprintd[29517]: Completing action FPI_DEVICE_ACTION_IDENTIFY in idle!
+Sep 06 16:40:11 omarchy fprintd[29517]: [elanmoc2] New enroll operation
+Sep 06 16:40:11 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES entering state 0
+Sep 06 16:40:11 omarchy fprintd[29517]: Querying number of enrolled fingers
+Sep 06 16:40:11 omarchy fprintd[29517]: Sent query for number of enrolled fingers
+Sep 06 16:40:11 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES entering state 1
+Sep 06 16:40:11 omarchy fprintd[29517]: Enrolled count is 0, proceeding with enroll stage
+Sep 06 16:40:11 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES entering state 7
+Sep 06 16:40:11 omarchy fprintd[29517]: Enroll command sent: 0/8
+Sep 06 16:40:11 omarchy fprintd[29517]: Device reported finger status change: FP_FINGER_STATUS_NEEDED
+Sep 06 16:40:11 omarchy fprintd[29517]: Finger present 0
+Sep 06 16:40:11 omarchy fprintd[29517]: Finger needed 1
+Sep 06 16:40:18 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES entering state 8
+Sep 06 16:40:18 omarchy fprintd[29517]: Device reported finger status change: FP_FINGER_STATUS_PRESENT
+Sep 06 16:40:18 omarchy fprintd[29517]: Finger present 1
+Sep 06 16:40:18 omarchy fprintd[29517]: Finger needed 0
+Sep 06 16:40:18 omarchy fprintd[29517]: Enroll stage succeeded
+Sep 06 16:40:18 omarchy fprintd[29517]: Device reported enroll progress, reported 1 of 8 have been completed
+Sep 06 16:40:18 omarchy fprintd[29517]: enroll_stage_cb: result enroll-stage-passed
+Sep 06 16:40:18 omarchy fprintd[29517]: Performing another enroll
+Sep 06 16:40:18 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES entering state 7
+Sep 06 16:40:18 omarchy fprintd[29517]: Enroll command sent: 1/8
+Sep 06 16:40:18 omarchy fprintd[29517]: Device reported finger status change: FP_FINGER_STATUS_NEEDED
+Sep 06 16:40:18 omarchy fprintd[29517]: Finger present 0
+Sep 06 16:40:18 omarchy fprintd[29517]: Finger needed 1
+Sep 06 16:40:19 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES entering state 8
+Sep 06 16:40:19 omarchy fprintd[29517]: Device reported finger status change: FP_FINGER_STATUS_PRESENT
+Sep 06 16:40:19 omarchy fprintd[29517]: Finger present 1
+Sep 06 16:40:19 omarchy fprintd[29517]: Finger needed 0
+Sep 06 16:40:19 omarchy fprintd[29517]: Enroll stage succeeded
+Sep 06 16:40:19 omarchy fprintd[29517]: Device reported enroll progress, reported 2 of 8 have been completed
+Sep 06 16:40:19 omarchy fprintd[29517]: enroll_stage_cb: result enroll-stage-passed
+Sep 06 16:40:19 omarchy fprintd[29517]: Performing another enroll
+Sep 06 16:40:19 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES entering state 7
+Sep 06 16:40:19 omarchy fprintd[29517]: Enroll command sent: 2/8
+Sep 06 16:40:19 omarchy fprintd[29517]: Device reported finger status change: FP_FINGER_STATUS_NEEDED
+Sep 06 16:40:19 omarchy fprintd[29517]: Finger present 0
+Sep 06 16:40:19 omarchy fprintd[29517]: Finger needed 1
+Sep 06 16:40:20 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES entering state 8
+Sep 06 16:40:20 omarchy fprintd[29517]: Device reported finger status change: FP_FINGER_STATUS_PRESENT
+Sep 06 16:40:20 omarchy fprintd[29517]: Finger present 1
+Sep 06 16:40:20 omarchy fprintd[29517]: Finger needed 0
+Sep 06 16:40:20 omarchy fprintd[29517]: Enroll stage succeeded
+Sep 06 16:40:20 omarchy fprintd[29517]: Device reported enroll progress, reported 3 of 8 have been completed
+Sep 06 16:40:20 omarchy fprintd[29517]: enroll_stage_cb: result enroll-stage-passed
+Sep 06 16:40:20 omarchy fprintd[29517]: Performing another enroll
+Sep 06 16:40:20 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES entering state 7
+Sep 06 16:40:20 omarchy fprintd[29517]: Enroll command sent: 3/8
+Sep 06 16:40:20 omarchy fprintd[29517]: Device reported finger status change: FP_FINGER_STATUS_NEEDED
+Sep 06 16:40:20 omarchy fprintd[29517]: Finger present 0
+Sep 06 16:40:20 omarchy fprintd[29517]: Finger needed 1
+Sep 06 16:40:21 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES entering state 8
+Sep 06 16:40:21 omarchy fprintd[29517]: Device reported finger status change: FP_FINGER_STATUS_PRESENT
+Sep 06 16:40:21 omarchy fprintd[29517]: Finger present 1
+Sep 06 16:40:21 omarchy fprintd[29517]: Finger needed 0
+Sep 06 16:40:21 omarchy fprintd[29517]: Enroll stage succeeded
+Sep 06 16:40:21 omarchy fprintd[29517]: Device reported enroll progress, reported 4 of 8 have been completed
+Sep 06 16:40:21 omarchy fprintd[29517]: enroll_stage_cb: result enroll-stage-passed
+Sep 06 16:40:21 omarchy fprintd[29517]: Performing another enroll
+Sep 06 16:40:21 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES entering state 7
+Sep 06 16:40:21 omarchy fprintd[29517]: Enroll command sent: 4/8
+Sep 06 16:40:21 omarchy fprintd[29517]: Device reported finger status change: FP_FINGER_STATUS_NEEDED
+Sep 06 16:40:21 omarchy fprintd[29517]: Finger present 0
+Sep 06 16:40:21 omarchy fprintd[29517]: Finger needed 1
+Sep 06 16:40:22 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES entering state 8
+Sep 06 16:40:22 omarchy fprintd[29517]: Device reported finger status change: FP_FINGER_STATUS_PRESENT
+Sep 06 16:40:22 omarchy fprintd[29517]: Finger present 1
+Sep 06 16:40:22 omarchy fprintd[29517]: Finger needed 0
+Sep 06 16:40:22 omarchy fprintd[29517]: Enroll stage succeeded
+Sep 06 16:40:22 omarchy fprintd[29517]: Device reported enroll progress, reported 5 of 8 have been completed
+Sep 06 16:40:22 omarchy fprintd[29517]: enroll_stage_cb: result enroll-stage-passed
+Sep 06 16:40:22 omarchy fprintd[29517]: Performing another enroll
+Sep 06 16:40:22 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES entering state 7
+Sep 06 16:40:22 omarchy fprintd[29517]: Enroll command sent: 5/8
+Sep 06 16:40:22 omarchy fprintd[29517]: Device reported finger status change: FP_FINGER_STATUS_NEEDED
+Sep 06 16:40:22 omarchy fprintd[29517]: Finger present 0
+Sep 06 16:40:22 omarchy fprintd[29517]: Finger needed 1
+Sep 06 16:40:22 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES entering state 8
+Sep 06 16:40:22 omarchy fprintd[29517]: Device reported finger status change: FP_FINGER_STATUS_PRESENT
+Sep 06 16:40:22 omarchy fprintd[29517]: Finger present 1
+Sep 06 16:40:22 omarchy fprintd[29517]: Finger needed 0
+Sep 06 16:40:22 omarchy fprintd[29517]: Enroll stage succeeded
+Sep 06 16:40:22 omarchy fprintd[29517]: Device reported enroll progress, reported 6 of 8 have been completed
+Sep 06 16:40:22 omarchy fprintd[29517]: enroll_stage_cb: result enroll-stage-passed
+Sep 06 16:40:22 omarchy fprintd[29517]: Performing another enroll
+Sep 06 16:40:22 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES entering state 7
+Sep 06 16:40:22 omarchy fprintd[29517]: Enroll command sent: 6/8
+Sep 06 16:40:22 omarchy fprintd[29517]: Device reported finger status change: FP_FINGER_STATUS_NEEDED
+Sep 06 16:40:22 omarchy fprintd[29517]: Finger present 0
+Sep 06 16:40:22 omarchy fprintd[29517]: Finger needed 1
+Sep 06 16:40:23 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES entering state 8
+Sep 06 16:40:23 omarchy fprintd[29517]: Device reported finger status change: FP_FINGER_STATUS_PRESENT
+Sep 06 16:40:23 omarchy fprintd[29517]: Finger present 1
+Sep 06 16:40:23 omarchy fprintd[29517]: Finger needed 0
+Sep 06 16:40:23 omarchy fprintd[29517]: Enroll stage succeeded
+Sep 06 16:40:23 omarchy fprintd[29517]: Device reported enroll progress, reported 7 of 8 have been completed
+Sep 06 16:40:23 omarchy fprintd[29517]: enroll_stage_cb: result enroll-stage-passed
+Sep 06 16:40:23 omarchy fprintd[29517]: Performing another enroll
+Sep 06 16:40:23 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES entering state 7
+Sep 06 16:40:23 omarchy fprintd[29517]: Enroll command sent: 7/8
+Sep 06 16:40:23 omarchy fprintd[29517]: Device reported finger status change: FP_FINGER_STATUS_NEEDED
+Sep 06 16:40:23 omarchy fprintd[29517]: Finger present 0
+Sep 06 16:40:23 omarchy fprintd[29517]: Finger needed 1
+Sep 06 16:40:24 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES entering state 8
+Sep 06 16:40:24 omarchy fprintd[29517]: Device reported finger status change: FP_FINGER_STATUS_PRESENT
+Sep 06 16:40:24 omarchy fprintd[29517]: Finger present 1
+Sep 06 16:40:24 omarchy fprintd[29517]: Finger needed 0
+Sep 06 16:40:24 omarchy fprintd[29517]: Enroll stage succeeded
+Sep 06 16:40:24 omarchy fprintd[29517]: Device reported enroll progress, reported 8 of 8 have been completed
+Sep 06 16:40:24 omarchy fprintd[29517]: enroll_stage_cb: result enroll-stage-passed
+Sep 06 16:40:24 omarchy fprintd[29517]: Enroll completed
+Sep 06 16:40:24 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES entering state 9
+Sep 06 16:40:24 omarchy fprintd[29517]: Device reported finger status change: FP_FINGER_STATUS_NONE
+Sep 06 16:40:24 omarchy fprintd[29517]: Finger present 0
+Sep 06 16:40:24 omarchy fprintd[29517]: Finger needed 0
+Sep 06 16:40:24 omarchy fprintd[29517]: Check re-enroll command sent
+Sep 06 16:40:24 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES entering state 10
+Sep 06 16:40:24 omarchy fprintd[29517]: Finger is not enrolled, committing
+Sep 06 16:40:24 omarchy fprintd[29517]: Commit command sent
+Sep 06 16:40:24 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES entering state 11
+Sep 06 16:40:24 omarchy fprintd[29517]: Commit succeeded
+Sep 06 16:40:24 omarchy fprintd[29517]: Device reported enroll completion
+Sep 06 16:40:24 omarchy fprintd[29517]: Print for finger FP_FINGER_RIGHT_INDEX enrolled
+Sep 06 16:40:24 omarchy fprintd[29517]: [elanmoc2] ENROLL_NUM_STATES completed successfully
+Sep 06 16:40:24 omarchy fprintd[29517]: Completing action FPI_DEVICE_ACTION_ENROLL in idle!
+Sep 06 16:40:24 omarchy fprintd[29517]: enroll_cb: result enroll-completed
+Sep 06 16:40:24 omarchy fprintd[29517]: file_storage_print_data_save(): print saved to /var/lib/fprint/jvikramsrd/elanmoc2/0/7
+Sep 06 16:40:24 omarchy fprintd[29517]: Closing device
+Sep 06 16:40:24 omarchy fprintd[29517]: Cancelling any ongoing requests
+Sep 06 16:40:24 omarchy fprintd[29517]: Device reported close completion
+Sep 06 16:40:24 omarchy fprintd[29517]: USB callback error: device was disconnected
+Sep 06 16:40:24 omarchy fprintd[29517]: Completing action FPI_DEVICE_ACTION_CLOSE in idle!
+Sep 06 16:40:24 omarchy fprintd[29517]: released device 0
+Sep 06 16:40:26 omarchy fprintd[29517]: file_storage_discover_prints() for user 'jvikramsrd' in '/var/lib/fprint/jvikramsrd/elanmoc2/0'
+Sep 06 16:40:26 omarchy fprintd[29517]: file_storage_print_data_load(): loaded '/var/lib/fprint/jvikramsrd/elanmoc2/0/7' Success
+Sep 06 16:40:56 omarchy systemd[1]: fprintd.service: Deactivated successfully.

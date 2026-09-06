@@ -110,15 +110,23 @@ sleep 2
 LOG=$(journalctl --since "$SINCE" --no-pager 2>/dev/null | grep -iE 'elanmoc2|fprintd')
 
 # --- state-machine markers -------------------------------------------------
+# CAREFUL: fprintd logs "Deleting enrolled finger %s for user %s" (device.c)
+# and the driver logs "Deleting enrolled finger %d" (elanmoc2.c). Matching the
+# bare prefix picks up fprintd's message and falsely reports that
+# ENROLL_ATTEMPT_DELETE was entered. Anchor on the numeric finger index.
 saw() { printf '%s\n' "$LOG" | grep -qiF "$1"; }
+saw_re() { printf '%s\n' "$LOG" | grep -qiE "$1"; }
 M_REENROLL=0; M_INFO=0; M_DELETE=0; M_GUARD=0; M_DELETED=0; M_NOTENR=0; M_WIPE=0
+M_FPD_DEL=0
 saw 'need to check for re-enroll'                  && M_REENROLL=1
 saw 'fetching finger info'                         && M_INFO=1
-saw 'Deleting enrolled finger'                     && M_DELETE=1
+saw_re 'Deleting enrolled finger [0-9]+ *$'        && M_DELETE=1
 saw 'aborting enroll rather than wiping the sensor' && M_GUARD=1
 saw 'deleted, proceeding with enroll stage'        && M_DELETED=1
 saw 'Finger not enrolled, proceeding'              && M_NOTENR=1
 saw 'Wipe sensor command sent'                     && M_WIPE=1
+# fprintd deleting the print itself, via the driver's delete method
+saw_re 'Deleting enrolled finger [a-z-]+ for user' && M_FPD_DEL=1
 
 AFTER_CORES=$(coredumpctl list --no-legend 2>/dev/null | grep -c fprintd)
 systemctl start fprintd 2>/dev/null
@@ -136,6 +144,7 @@ printf '   %-46s %s\n' "continued past the memcpy (0002 guard fired)" "$([ $M_GU
 printf '   %-46s %s\n' "sensor accepted the delete instead" "$([ $M_DELETED = 1 ] && echo yes || echo no)"
 printf '   %-46s %s\n' "took 'not enrolled' branch (path NOT tested)" "$([ $M_NOTENR = 1 ] && echo yes || echo no)"
 printf '   %-46s %s\n' "WIPE SENSOR command issued" "$([ $M_WIPE = 1 ] && echo '*** YES ***' || echo no)"
+printf '   %-46s %s\n' "fprintd deleted the print itself first" "$([ $M_FPD_DEL = 1 ] && echo yes || echo no)"
 
 echo
 echo "== result =="
@@ -160,7 +169,18 @@ if [ $M_WIPE = 1 ] || [ "$AFTER_COUNT" -lt "$BEFORE_COUNT" ] || [ $STILL_THERE =
 fi
 if [ $M_DELETE = 0 ]; then
   echo "   VERDICT: INCONCLUSIVE -- ENROLL_ATTEMPT_DELETE was never entered."
-  if [ $M_NOTENR = 1 ]; then
+  if [ $M_FPD_DEL = 1 ]; then
+    echo "            fprintd deleted the existing print itself, through the"
+    echo "            driver's delete method, before starting the enroll. The"
+    echo "            driver's own collision path is therefore never entered."
+    echo
+    echo "            This is a consequence of patch 0002 adding dev_class->delete:"
+    echo "            with a delete available, fprintd deletes then enrolls, so"
+    echo "            ENROLL_ATTEMPT_DELETE is unreachable through fprintd. It is"
+    echo "            reachable only from a libfprint client that enrolls without"
+    echo "            deleting first, or on an UNPATCHED build that has no delete."
+    echo "            Do not run the unpatched case: that is the sensor wipe."
+  elif [ $M_NOTENR = 1 ]; then
     echo "            The sensor did not recognise the finger, so the enroll took"
     echo "            the 'not enrolled' branch. Present the SAME finger that is"
     echo "            already enrolled and re-run."
