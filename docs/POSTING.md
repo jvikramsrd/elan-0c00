@@ -73,14 +73,28 @@ Then paste the body of `MR330-report.md` (everything below the `---`, not the
 The web UI sits behind Anubis bot protection; a normal browser is fine, it's
 only scripted access that struggles.
 
-## 5. Attach the patch
+## 5. Attach the patches
 
-`patches/0003-elanmoc2-fix-double-free-of-retry-gerror.patch` applies cleanly to
-the MR branch head `11f0316d`. Attach it to the comment, or paste it in a fenced
-block.
+Two patches back claims in the comment. Both apply cleanly to the MR branch
+head `11f0316d`, in this order:
 
-If @depau would rather keep !330 focused on the driver, the fix stands on its
-own against `master` once the driver lands — the comment already offers that.
+| Patch | Backs | Verified by |
+|---|---|---|
+| `0003-elanmoc2-fix-double-free-of-retry-gerror.patch` | §1 double free | 6 rejected verifies on `0c00`, no coredump |
+| `0004-elanmoc2-fix-memory-safety-in-user-id-parsing.patch` | §2 parsing bugs | AddressSanitizer, 3 crashes before / clean after |
+
+Attach both, or paste them in fenced blocks. `0004` applies on top of `0003`;
+it touches a different function, so either order works in practice, but offer
+them in the order the report discusses them.
+
+`patches/0002-elanmoc2-combined-wipe-fix-and-delete.patch` is **not** for
+posting as-is — §3 raises the wipe-on-failed-delete behaviour as a design
+question for @depau rather than a fix to merge, and 0002 also carries an
+unrelated `delete` implementation. Let him answer the question first.
+
+If @depau would rather keep !330 focused on the driver, both fixes stand on
+their own against `master` once the driver lands — the comment already offers
+that.
 
 ## Tone notes
 
