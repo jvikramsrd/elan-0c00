@@ -135,7 +135,19 @@ warns about the mismatch.
 
 The fix is to steal the error at both report sites, and to set
 `FPI_MATCH_ERROR` when one is present. Patch attached; it applies cleanly to
-`11f0316d`. I've been running it since and haven't reproduced the crash.
+`11f0316d` and builds clean against the full default driver set.
+
+<!-- DO NOT POST UNTIL THIS PARAGRAPH IS TRUE.
+     Run `sudo ./scripts/verify-crash-test.sh`. It must report PASSED with at
+     least 4 real rejections. Then replace this comment with the actual
+     numbers, e.g.:
+
+       Running the patched build, I put N rejected verifies through the sensor
+       (previously it died after 4-5) with no coredump.
+
+     The analysis above stands on the source and the backtrace regardless, but
+     a runtime claim you have not made yourself does not belong in a bug
+     report. -->
 
 I'd expect this to be reproducible on `0c4c` too — just present the wrong
 finger to `fprintd-verify` five or six times in a row.
