@@ -49,8 +49,16 @@ echo -n "  libfprint-2.so.2 resolves to: "; readlink -f /usr/lib/libfprint-2.so.
 
 echo "== verifying =="
 echo -n "  installed library contains the elanmoc2 driver: "
-strings "$(readlink -f /usr/lib/libfprint-2.so.2)" | grep -q "ELAN Match-on-Chip 2" \
-  && echo "YES" || echo "NO"
+# NB: do NOT pipe strings into `grep -q` here. grep exits at the first match,
+# strings takes SIGPIPE, and `set -o pipefail` turns that into a failed
+# pipeline -- reporting NO on a library that is in fact correct.
+if strings "$(readlink -f /usr/lib/libfprint-2.so.2)" \
+     | grep -c "ELAN Match-on-Chip 2" | grep -qv '^0$'; then
+  echo "YES"
+else
+  echo "NO"
+  echo "  ERROR: the installed library has no elanmoc2 driver; rolling back is advised"
+fi
 echo -n "  system library claims 04f3:0c00: "
 python3 - <<'PY'
 import struct
@@ -74,7 +82,7 @@ cat <<'EOF'
 
 == ROLLBACK ==
   sudo pacman -S libfprint          # restore the distro package, or
-  sudo cp -a /usr/lib/libfprint-2.so.2.0.0.pacman-orig \
+  sudo cp -a /var/backups/elan-0c00/libfprint-2.so.2.0.0.distro-orig \
              /usr/lib/libfprint-2.so.2.0.0 && sudo ldconfig
 
 NOTE: pacman -Qkk libfprint will now report this library as modified. The next

@@ -1,0 +1,91 @@
+From: Jyothi Vikrama Simha Reddy Dirisinapu <jvikramsrd@gmail.com>
+Subject: [PATCH] elanmoc2: Fix double free of the retry GError in identify/verify
+
+fpi_device_verify_report() and fpi_device_identify_report() take ownership
+of the GError they are passed: both store it directly as data->error in the
+task's FpMatchData, which match_data_free() later releases with
+g_clear_error(). Other drivers honour this -- see virtual-device-storage.c,
+which passes g_steal_pointer (&error).
+
+elanmoc2_identify_verify_report() passed *error instead of stealing it, while
+every caller holds that same error in a g_autoptr(GError). The error is
+therefore freed twice: once by the autoptr when the SSM state handler
+returns, and again by match_data_free() when the task data is destroyed.
+
+The window is not narrow. When the sensor rejects a finger,
+IDENTIFY_GET_FINGER_INFO takes the can_retry branch, reports the error and
+jumps back to IDENTIFY_IDENTIFY -- so the free-after-free repeats on every
+unrecognised touch. On an 04f3:0c00 this reliably kills fprintd after a
+handful of failed verifies:
+
+  fprintd[1684]: Device reported an error during verify: Finger not recognized
+  fprintd[1684]: Driver reported an error code without setting match result to error!
+  kernel: traps: fprintd[1684] general protection fault ip:... in libc.so.6
+  systemd-coredump: Process 1684 (fprintd) ... dumped core.
+    #3  match_data_free (libfprint-2.so.2 + 0xb439)
+
+and on the abort path:
+
+  fprintd[3390]: free(): invalid pointer
+  systemd-coredump: Process 3390 (fprintd) ... dumped core.
+    #8  match_data_free (libfprint-2.so.2 + 0xb439)
+
+Steal the error at both report call sites so libfprint holds the only
+reference.
+
+While here, set FPI_MATCH_ERROR when an error is reported on the verify
+path. Passing FPI_MATCH_FAIL alongside a non-NULL error is what produces
+the "Driver reported an error code without setting match result to error!"
+warning above, which precedes each crash.
+
+The return value of elanmoc2_identify_verify_report() is not used by any
+caller; it is adjusted to consistently mean "the finger matched".
+---
+--- i/libfprint/drivers/elanmoc2/elanmoc2.c
++++ w/libfprint/drivers/elanmoc2/elanmoc2.c
+@@ -467,9 +467,14 @@
+  * @error: Optional error
+  *
+  * Calls the correct verify or identify report function based on the input data.
+- * Returns whether the action should be completed.
+  *
+- * Returns: Whether to complete the action.
++ * fpi_device_verify_report() and fpi_device_identify_report() take ownership of
++ * the #GError they are handed (they store it in the task's #FpMatchData and
++ * free it from match_data_free()). @error is therefore stolen and cleared here
++ * whenever it is passed on, so that a caller holding it in a g_autoptr() does
++ * not free it a second time.
++ *
++ * Returns: %TRUE if the finger matched.
+  */
+ static gboolean
+ elanmoc2_identify_verify_report (FpDevice *device, FpPrint *print,
+@@ -500,8 +505,8 @@
+             }
+           fp_info ("Identify: no match");
+         }
+-      fpi_device_identify_report (device, NULL, print, *error);
+-      return TRUE;
++      fpi_device_identify_report (device, NULL, print, g_steal_pointer (error));
++      return FALSE;
+     }
+   else
+     {
+@@ -523,8 +528,13 @@
+               print = NULL;
+             }
+         }
+-      fpi_device_verify_report (device, result, print, *error);
+-      return result != FPI_MATCH_FAIL;
++      /* An error must be accompanied by FPI_MATCH_ERROR, otherwise
++       * fpi_device_verify_report() warns and the result is inconsistent. */
++      if (*error != NULL)
++        result = FPI_MATCH_ERROR;
++
++      fpi_device_verify_report (device, result, print, g_steal_pointer (error));
++      return result == FPI_MATCH_SUCCESS;
+     }
+ }
+ 
+-- 
+2.51.0

@@ -1,3 +1,10 @@
 /target
 /work
 /tools/fp-probe
+
+# makepkg working directories and built packages
+/packaging/src
+/packaging/pkg
+/packaging/libfprint
+/packaging/*.pkg.tar.*
+/packaging/*.log

@@ -1,0 +1,175 @@
+diff --git i/libfprint/drivers/elanmoc2/elanmoc2.c w/libfprint/drivers/elanmoc2/elanmoc2.c
+index bec6aeb2..339acccb 100644
+--- i/libfprint/drivers/elanmoc2/elanmoc2.c
++++ w/libfprint/drivers/elanmoc2/elanmoc2.c
+@@ -857,9 +857,20 @@ elanmoc2_enroll_run_state (FpiSsm *ssm, FpDevice *device)
+ 
+         if (data_in[1] != 0)
+           {
+-            fp_info ("Failed to delete finger %d, wiping sensor",
+-                     self->print_index);
+-            fpi_ssm_jump_to_state (ssm, ENROLL_WIPE_SENSOR);
++            /* Do not escalate a failed delete into wiping every enrolled
++             * finger. On 04f3:0c00 the preceding finger_info (ff 12) is
++             * rejected with `40 ff`, so the delete is built from a malformed
++             * reply and always fails -- which silently destroyed all stored
++             * templates. Fail the enroll instead and leave storage alone. */
++            fp_warn ("Failed to delete finger %d; aborting enroll rather than "
++                     "wiping the sensor", self->print_index);
++            error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
++                                              "Could not delete the existing "
++                                              "finger; refusing to wipe the "
++                                              "sensor");
++            fpi_device_enroll_complete (device, NULL, g_steal_pointer (&error));
++            fpi_ssm_mark_completed (g_steal_pointer (&self->ssm));
++            self->enroll_print = NULL;
+           }
+         else
+           {
+@@ -1139,6 +1150,116 @@ elanmoc2_clear_storage_run_state (FpiSsm *ssm, FpDevice *device)
+     }
+ }
+ 
++/* Data carried through the delete SSM. */
++typedef struct
++{
++  guint8 finger_id;
++  guint8 user_id[ELANMOC2_DELETE_USER_ID_CAP];
++  gsize  user_id_len;
++} Elanmoc2DeleteData;
++
++static void
++elanmoc2_delete_run_state (FpiSsm *ssm, FpDevice *device)
++{
++  FpiDeviceElanMoC2 *self = FPI_DEVICE_ELANMOC2 (device);
++  Elanmoc2DeleteData *data = fpi_ssm_get_data (ssm);
++
++  g_autoptr(GBytes) buffer_in = g_steal_pointer (&self->buffer_in);
++  const guint8 *data_in =
++    buffer_in != NULL ? g_bytes_get_data (buffer_in, NULL) : NULL;
++
++  switch (fpi_ssm_get_cur_state (ssm))
++    {
++    case DELETE_SEND: {
++        g_autoptr(GByteArray) buffer_out =
++          elanmoc2_prepare_cmd (self, &cmd_delete);
++
++        if (buffer_out == NULL)
++          {
++            fpi_ssm_next_state (ssm);
++            break;
++          }
++
++        /* Same framing the enroll path uses for its internal delete. */
++        gsize user_id_bytes = MIN (cmd_delete.out_len - 4, data->user_id_len);
++        g_assert (buffer_out->len >= 4 + user_id_bytes);
++        buffer_out->data[3] = 0xf0 | (data->finger_id + 5);
++        memcpy (&buffer_out->data[4], data->user_id, user_id_bytes);
++
++        fp_info ("Deleting finger %d (user id %" G_GSIZE_FORMAT " bytes)",
++                 data->finger_id, user_id_bytes);
++        elanmoc2_cmd_transceive (device, &cmd_delete, buffer_out);
++        break;
++      }
++
++    case DELETE_CHECK: {
++        if (data_in == NULL || g_bytes_get_size (buffer_in) < 2)
++          {
++            fpi_device_delete_complete (
++              device, fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
++                                                "No response to delete"));
++            fpi_ssm_mark_completed (g_steal_pointer (&self->ssm));
++            break;
++          }
++
++        if (data_in[1] != 0)
++          {
++            fp_warn ("Sensor refused to delete finger %d (status 0x%02x)",
++                     data->finger_id, data_in[1]);
++            fpi_device_delete_complete (
++              device, fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
++                                                "Sensor refused to delete "
++                                                "the print"));
++            fpi_ssm_mark_completed (g_steal_pointer (&self->ssm));
++            break;
++          }
++
++        fp_info ("Finger %d deleted", data->finger_id);
++        if (self->enrolled_num > 0)
++          self->enrolled_num--;
++        fpi_device_delete_complete (device, NULL);
++        fpi_ssm_mark_completed (g_steal_pointer (&self->ssm));
++        break;
++      }
++    }
++}
++
++static void
++elanmoc2_delete_print (FpDevice *device)
++{
++  FpiDeviceElanMoC2 *self = FPI_DEVICE_ELANMOC2 (device);
++  FpPrint *print = NULL;
++
++  g_autoptr(GVariant) fpi_data = NULL;
++  g_autoptr(GVariant) user_id_var = NULL;
++
++  fpi_device_get_delete_data (device, &print);
++  g_object_get (print, "fpi-data", &fpi_data, NULL);
++
++  if (fpi_data == NULL ||
++      !g_variant_check_format_string (fpi_data, "(y@ay)", FALSE))
++    {
++      fpi_device_delete_complete (
++        device, fpi_device_error_new (FP_DEVICE_ERROR_DATA_INVALID));
++      return;
++    }
++
++  Elanmoc2DeleteData *data = g_new0 (Elanmoc2DeleteData, 1);
++  g_variant_get (fpi_data, "(y@ay)", &data->finger_id, &user_id_var);
++
++  gsize len = 0;
++  const guint8 *user_id = g_variant_get_fixed_array (user_id_var, &len, 1);
++  data->user_id_len = MIN (len, sizeof (data->user_id));
++  if (data->user_id_len > 0)
++    memcpy (data->user_id, user_id, data->user_id_len);
++
++  fp_info ("[elanmoc2] New delete operation");
++  self->ssm = fpi_ssm_new (device, elanmoc2_delete_run_state,
++                           DELETE_NUM_STATES);
++  fpi_ssm_set_data (self->ssm, data, g_free);
++  fpi_ssm_start (self->ssm, elanmoc2_ssm_completed_callback);
++}
++
+ static void
+ elanmoc2_clear_storage (FpDevice *device)
+ {
+@@ -1185,6 +1306,7 @@ fpi_device_elanmoc2_class_init (FpiDeviceElanMoC2Class *klass)
+   dev_class->identify = elanmoc2_identify_verify;
+   dev_class->verify = elanmoc2_identify_verify;
+   dev_class->enroll = elanmoc2_enroll;
++  dev_class->delete = elanmoc2_delete_print;
+   dev_class->clear_storage = elanmoc2_clear_storage;
+   dev_class->cancel = elanmoc2_cancel;
+ 
+diff --git i/libfprint/drivers/elanmoc2/elanmoc2.h w/libfprint/drivers/elanmoc2/elanmoc2.h
+index 2a99089d..6690fb31 100644
+--- i/libfprint/drivers/elanmoc2/elanmoc2.h
++++ w/libfprint/drivers/elanmoc2/elanmoc2.h
+@@ -187,6 +187,17 @@ enum EnrollStates {
+   ENROLL_NUM_STATES
+ };
+ 
++/* Payload capacity of cmd_delete: out_len (72) minus the 4-byte header.
++ * A literal is required because ELANMOC2_USER_ID_MAX_LEN is defined in terms
++ * of a struct member and so is not a compile-time constant. */
++#define ELANMOC2_DELETE_USER_ID_CAP 68
++
++enum DeleteStates {
++  DELETE_SEND,
++  DELETE_CHECK,
++  DELETE_NUM_STATES
++};
++
+ enum ClearStorageStates {
+   CLEAR_STORAGE_WIPE_SENSOR,
+   CLEAR_STORAGE_GET_NUM_ENROLLED,

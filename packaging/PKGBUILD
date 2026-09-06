@@ -1,0 +1,72 @@
+# Maintainer: Jyothi Vikrama Simha Reddy Dirisinapu <jvikramsrd@gmail.com>
+#
+# libfprint built from the ELAN Match-on-Chip 2 driver branch (libfprint
+# MR !330, open since 2021) with the fixes from ../patches applied.
+#
+# Why a package rather than `meson install`: installing over the distro library
+# by hand leaves files in /usr that pacman does not own, which makes a later
+# `pacman -S libfprint` abort the WHOLE transaction with "exists in filesystem"
+# -- typically taking fprintd down with it. Packaging it means pacman owns the
+# files, upgrades are visible, and rollback is `pacman -S libfprint`.
+
+pkgname=libfprint-elanmoc2-0c00
+_srcname=libfprint
+_commit=11f0316d069cc90c154c8cb0e46478388c5e2a74   # depau/elanmoc2, MR !330 head
+pkgver=1.94.9+11+g11f0316d
+pkgrel=1
+pkgdesc="libfprint with the out-of-tree elanmoc2 driver (ELAN 04f3:0c00/0c4c/0c5e/0c7c/0c90) plus local fixes"
+arch=(x86_64)
+url="https://gitlab.freedesktop.org/libfprint/libfprint/-/merge_requests/330"
+license=('LGPL-2.1-or-later')
+depends=(glib2 glibc json-glib libgcc libgudev libgusb openssl pixman)
+makedepends=(git meson gtk-doc gobject-introspection)
+provides=(libfprint 'libfprint-2.so=2-64')
+conflicts=(libfprint)
+source=("git+https://gitlab.freedesktop.org/Depau/libfprint.git#commit=$_commit"
+        '0002-elanmoc2-combined-wipe-fix-and-delete.patch'
+        '0003-elanmoc2-fix-double-free-of-retry-gerror.patch')
+sha256sums=('SKIP'
+            'e516101f2ae40ddd77d56b13c83e59c9dbcd43c2dcdfa000f3c2123213b49277'
+            'c961cfaf387c43790a26c936c99c9d4a7ce536d7850937863a3a8de03062b935')
+
+prepare() {
+  cd "$_srcname"
+  # Applied in series; both are against this exact commit.
+  #   0002 - don't wipe every enrolled finger when one delete fails, and add
+  #          the missing delete implementation
+  #   0003 - don't double-free the retry GError (crashes fprintd on any
+  #          rejected finger, on every elanmoc2 device)
+  for p in "$srcdir"/000*.patch; do
+    echo ":: applying $(basename "$p")"
+    git apply -p1 "$p"
+  done
+}
+
+build() {
+  # Default driver set: all 30 upstream drivers *plus* elanmoc2, so this is a
+  # drop-in replacement for the distro package rather than an elanmoc2-only
+  # build that would break any other reader.
+  arch-meson "$_srcname" build
+  meson compile -C build
+}
+
+check() {
+  # Refuse to produce a package that does not actually support the hardware
+  # this exists for. A silent regression here is how you end up with a
+  # fingerprint reader that stops working after an upgrade.
+  local out
+  out=$(build/libfprint/fprint-list-supported-devices)
+  printf '%s\n' "$out" | grep -qi '04f3:0c00' || {
+    echo "ERROR: built library does not claim 04f3:0c00"; return 1; }
+  printf '%s\n' "$out" | grep -qi 'Match-on-Chip 2' || {
+    echo "ERROR: elanmoc2 driver missing from the build"; return 1; }
+  # Sanity-check that this is the full driver set, not an elanmoc2-only build.
+  local n
+  n=$(printf '%s\n' "$out" | grep -c ':')
+  echo ":: $n supported device entries; 04f3:0c00 present"
+  [ "$n" -gt 50 ] || { echo "ERROR: suspiciously few drivers built"; return 1; }
+}
+
+package() {
+  meson install -C build --destdir "$pkgdir"
+}
