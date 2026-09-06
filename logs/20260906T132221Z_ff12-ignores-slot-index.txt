@@ -1,0 +1,67 @@
+# 04f3:0c00 -- finger_info (ff 12) ignores its slot argument.
+#
+# FINDING
+#   ff 12 returns the record of the MOST RECENTLY IDENTIFIED finger, not the
+#   record for the slot named in payload byte 3. With no successful identify
+#   since the device was opened, it returns a 2-byte `40 ff`.
+#
+# HOW IT WAS ESTABLISHED
+#   Two `elanctl dump` runs, an hour apart, with a different last-identified
+#   finger before each. All ten slots track the last match, not the index.
+#   The second run was a stated prediction before it was made.
+#
+# WHY IT WAS MISSED FOR SO LONG
+#   docs/MR330-report.md originally read the identical replies as "ff 12 is
+#   rejected on every slot" and concluded the identify path could not complete
+#   on 0c00. It completes fine. The identical-ness was the real signal; the
+#   value was incidental. Cold-probing a match-on-chip command outside the
+#   driver's state machine measured sensor state, not command support.
+#
+# IMPACT ON UPSTREAM elanmoc2: NONE TODAY.
+#   Both finger_info call sites (IDENTIFY_GET_FINGER_INFO ~line 661, and the
+#   enroll re-enroll check ~line 846) are preceded by an identify that names
+#   the slot, so the driver always receives the record it expects. There is no
+#   list/enumerate vfunc. The divergence is latent -- a landmine for any future
+#   code that walks slots, not a live bug.
+
+== RUN 1 == last identify: slot 2, finger 6 (right-thumb), at 18:36:55
+  get_enrolled_count -> [40 03]   (3 enrolled)
+  slots 0..9 ALL return the same 64 bytes, decoding to:
+    FP1-20260906-6-3EC6E5EF-jvikramsrd
+  Slots 3..9 hold nothing, yet answer identically.
+
+== MATRIX == each finger presented against its own slot, all three MATCH
+  verified as           identify   rebuilt user id
+  right-thumb (6)       slot 2     FP1-20260906-6-3EC6E5EF-jvikramsrd
+  right-index (7)       slot 0     FP1-20260906-7-1B3AC5EE-jvikramsrd
+  right-middle (8)      slot 1     FP1-20260906-8-00B0ACA7-jvikramsrd
+
+  Note the driver receives CORRECT per-finger records here, because each
+  finger_info follows an identify that just named that finger's slot.
+
+== RUN 2 == last identify: slot 1, finger 8 (right-middle), from the matrix
+  PREDICTED BEFORE RUNNING: all ten slots return finger 8, not finger 6.
+  get_enrolled_count -> [40 03]
+  slots 0..9 ALL return:
+    40 00 46 50 31 2d 32 30 32 36 30 39 30 36 2d 38 2d 30 30 42 30 41 43 41 37
+    2d 6a 76 69 6b 72 61 6d 73 72 64 00 ... (64 B)
+    -> FP1-20260906-8-00B0ACA7-jvikramsrd
+  CONFIRMED.
+
+== ALSO ESTABLISHED TONIGHT ==
+  * The sensor WORKS. Three fingers enrolled; each verifies to its own slot
+    with its own user id. fprintd auth via PAM opens root sessions (18:36).
+  * get_enrolled_count is a genuine count: reads 3 with three enrolled,
+    0 with none. Not a status byte, and it does increment past 1.
+  * get_fw_ver still returns unframed BCD `02 83` -- reconfirmed twice.
+
+== A DISCARDED THEORY, RECORDED SO IT IS NOT RE-RUN ==
+  "ff 12 returns one FIXED record, so a wrong finger authenticates as
+  right-thumb." Tested by scripts/finger-index-test.sh and DISCONFIRMED:
+  verifying right-thumb while presenting right-middle gives no-match, because
+  the record follows the finger that was actually matched. There is no
+  cross-finger false accept.
+
+  That test's TEST A (correct finger, expected no-match) appeared to confirm
+  the theory. It was a failed press -- the same finger matches cleanly in the
+  matrix above. A prediction met for the wrong reason.

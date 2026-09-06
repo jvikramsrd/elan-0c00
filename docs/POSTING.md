@@ -112,9 +112,9 @@ The branch is already prepared in the scratch clone at `work/libfprint`
 (gitignored, so it is not part of this repo):
 
 ```
-elanmoc2-memory-safety @ 4994bec6
-  4994bec6 elanmoc2: Fix memory-safety bugs parsing the finger_info reply
-  a2dd468f elanmoc2: Fix double free of the retry GError in identify/verify
+elanmoc2-memory-safety @ 8e4a86e6
+  8e4a86e6 elanmoc2: Fix memory-safety bugs parsing the finger_info reply
+  ac559668 elanmoc2: Fix double free of the retry GError in identify/verify
   11f0316d WIP add 0c7c          <- depau/elanmoc2, the MR !330 head
 ```
 
@@ -157,9 +157,20 @@ The report leads with the double free on purpose. It is the finding that:
 That ordering is what makes this worth a maintainer's attention on a
 five-year-old MR. Resist the urge to move your own device's problems to the top.
 
+The report now *leads* with `0c00` working, because it does — enroll, commit,
+identify, verify and delete all function, and PAM auth opens root sessions.
+That is worth stating plainly to someone who has kept a driver alive for five
+years without the hardware.
+
 Two things you are deliberately *not* claiming, and shouldn't start claiming if
 someone pushes back:
 
-- that `0c00` works — it doesn't; identify still can't complete (§4)
-- what `ff 12` should be replaced with — you didn't go opcode-hunting, and
-  saying so is a strength, not a gap
+- that `ff 12` ignoring its slot index is a `0c00` quirk — you have one PID and
+  no way to compare; the report asks him to check, it doesn't assert
+- that anything reaches `ENROLL_WIPE_SENSOR` on `0c00` — §3 was a bug report
+  and is now a design question, because the chain it rested on didn't hold
+
+That retraction is in the report on purpose. Leaving it out and quietly
+dropping the claim would be worse: he may have read the earlier framing in your
+repo, and a contributor who marks their own retraction is easier to trust on
+the findings that survived.

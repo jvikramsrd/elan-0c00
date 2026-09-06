@@ -179,20 +179,37 @@ notices because **`cmd_get_fw_ver` is defined in `elanmoc2.h` but never
 referenced anywhere in `elanmoc2.c`** — the command is dead code upstream, so
 its reply framing has never been exercised. Likely an upstream bug.
 
-### 2. `finger_info` is rejected on every slot  [OBSERVED]
+### 2. `finger_info` ignores its slot argument  [OBSERVED]
 
-`40 ff 12 NN` returns a 2-byte `40 ff` for **all** of slots 0-9, not the
-documented 64-byte record. Byte 1 is `0xff`, whose most-significant nibble is
-set, so by the driver's own rule it is a terminal error. `0xff` does not appear
-in the reference driver's error list.
+`ff 12` returns the record of the **most recently identified finger**, not the
+record for the slot in payload byte 3. With no successful identify since the
+device was opened, it answers with a 2-byte `40 ff`.
 
-Note `get_enrolled_count` (`ff 04`) works, so the sensor does accept `0xff`-family
-opcodes in general — `ff 12` specifically is unsupported or differently shaped
-on this PID.
+Demonstrated by two `elanctl dump` runs with a different last-identified finger
+before each. Three fingers are enrolled (6, 7, 8); all ten slots answer
+identically in both runs, including the seven that hold nothing:
 
-Upstream sets `short_is_error = TRUE` for this command, so the reference driver
-would also fail here. **The `elanmoc2` identify path cannot work on 04f3:0c00 as
-written**, since `IDENTIFY_GET_FINGER_INFO` follows every successful match.
+| last identify before the dump | what all ten slots return |
+|---|---|
+| slot 2, finger 6 (right-thumb) | `FP1-20260906-6-3EC6E5EF-jvikramsrd` |
+| slot 1, finger 8 (right-middle) | `FP1-20260906-8-00B0ACA7-jvikramsrd` |
+
+The second run was predicted before it was made. Raw capture in
+`logs/20260906T132221Z_ff12-ignores-slot-index.txt`.
+
+**This is why an earlier revision of these notes recorded "`finger_info` is
+rejected on every slot".** `elanctl` probes slots cold, with no identify in
+front. At that time no identify had succeeded since the device was opened, so
+there was no current record and every slot returned the same `40 ff`. The
+identical replies were the real signal; the value was incidental. Probing a
+match-on-chip command outside the driver's state machine measures sensor state,
+not command support — the mistake is easy to repeat and worth naming.
+
+The reference driver is unaffected. Both `cmd_finger_info` call sites — the
+identify path and the enroll re-enroll check — issue it immediately after an
+`ff 03` that names the slot, so they always receive the record they meant to
+ask for. There is no list/enumerate vfunc. Any future code that walks slots
+without identifying first would silently read one record repeatedly.
 
 ### 3. `enroll` and `commit` work  [OBSERVED]
 
@@ -205,10 +222,13 @@ The enroll state machine gates on `identify` (`ff 03`), **not** on
 When `identify` reports no match, the driver jumps straight to `ENROLL_ENROLL`
 and the broken `finger_info` is never reached.
 
-Re-enrolling a finger the sensor already holds is the failing case: `identify`
-returns a slot index, `finger_info` is then issued and rejected, the delete is
-built from a malformed reply and fails, and the unpatched driver escalates to
-`ENROLL_WIPE_SENSOR`.
+Re-enrolling a finger the sensor already holds was previously recorded here as
+the failing case — `identify` returns a slot index, `finger_info` is issued and
+rejected, the delete is built from a malformed reply, and the driver escalates
+to `ENROLL_WIPE_SENSOR`. **That chain does not hold.** The `finger_info` in that
+path follows an identify that just named the slot, so it returns a well-formed
+record (§2) and the delete is built correctly. The escalation code exists, but
+nothing observed on `0c00` reaches it.
 
 ### 4. `resp[1]` is a real count, and `ff 12` is the broken part  [OBSERVED]
 
@@ -245,10 +265,8 @@ fixed status byte cannot read `0x01` in one state and `0x00` in another, so
 `resp[1]` tracks device template state and the `[PORTED]` semantics below hold
 on `0c00`.
 
-**Limit of the evidence:** only the values `0` and `1` have been observed. That
-rules out a constant status byte, but does not by itself separate a true count
-from a boolean "holds at least one template". Distinguishing those needs a
-second template enrolled concurrently and a re-read — not yet done.
+**Resolved:** with three fingers enrolled the same query returns `40 03`, so it
+is a true count and not a "holds at least one" flag.
 
 The consequence for §2 is that the count was never the suspect part: the sensor
 genuinely holds the template it says it holds, and `ff 12` is where `0c00`
@@ -355,9 +373,9 @@ top of the hardware; the hardware does not offer the capability.
 
 ## Open questions
 
-1. **Why is `ff 12` rejected on `0c00`?** Different opcode, different payload
-   shape, or does it require prior state the reference driver's state machine
-   establishes?
+1. **Is `ff 12` ignoring its slot index specific to `0c00`?** Needs a second
+   PID to compare against: identify with one finger, then read a slot
+   belonging to a different one.
 2. `commit` and `delete` are both `out_len == 72`. The 69-byte payload layout
    after `40 ff XX` is not documented here and was not traced.
 3. Do endpoints `0x02`/`0x04`/`0x81`/`0x82` respond to anything on `0c00`?
@@ -367,8 +385,8 @@ top of the hardware; the hardware does not offer the capability.
    `ELANMOC2_DEV_0C5E`? The `ff 12` rejection suggests yes.
 5. What does the `0xBC` HID feature report contain? Reading it needs a
    `GET_REPORT`, which is outside `probe`'s read-only standard-request scope.
-6. Does `get_enrolled_count` count past 1, or is it a "holds at least one"
-   flag? Only `0` and `1` have been observed.
+6. What does `resp[2]` of `check_enroll_collision` mean? It is `0xff` here and
+   the driver never reads it.
 
 ### Resolved
 
@@ -376,8 +394,11 @@ top of the hardware; the hardware does not offer the capability.
   bulk-only vendor device advertise one?~~ Fetched and decoded above: a single
   vendor Feature report (ID `0xBC`, 7×8 bits) with no Input or Output items —
   a control-endpoint side channel, not a data path.
-- ~~Is `get_enrolled_count`'s `0x01` a count or a status?~~ A count: it reads
-  `0` with nothing enrolled and `1` with one template stored (§4).
+- ~~Is `get_enrolled_count`'s `0x01` a count or a status?~~ A count: `0` with
+  nothing enrolled, `1` with one template, `3` with three (§4).
+- ~~Why is `ff 12` rejected on `0c00`?~~ It isn't. It ignores its slot argument
+  and returns the last-identified record, answering `40 ff` only when no
+  identify has succeeded since the device was opened (§2).
 - ~~Does the device volunteer any data on a bulk IN with no prior OUT?~~ No.
   All four bulk IN endpoints (`0x81`, `0x82`, `0x83`, `0x84`) time out after
   300 ms with nothing sent. The protocol is strictly request/response.

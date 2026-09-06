@@ -10,10 +10,10 @@ index bec6aeb2..339acccb 100644
 -                     self->print_index);
 -            fpi_ssm_jump_to_state (ssm, ENROLL_WIPE_SENSOR);
 +            /* Do not escalate a failed delete into wiping every enrolled
-+             * finger. On 04f3:0c00 the preceding finger_info (ff 12) is
-+             * rejected with `40 ff`, so the delete is built from a malformed
-+             * reply and always fails -- which silently destroyed all stored
-+             * templates. Fail the enroll instead and leave storage alone. */
++             * finger. Losing every stored template because one delete failed
++             * is a surprising outcome for a caller who asked to add a finger,
++             * and nothing reports it. Fail the enroll instead and leave
++             * storage alone. */
 +            fp_warn ("Failed to delete finger %d; aborting enroll rather than "
 +                     "wiping the sensor", self->print_index);
 +            error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,

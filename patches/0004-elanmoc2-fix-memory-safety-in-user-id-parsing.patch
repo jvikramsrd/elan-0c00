@@ -12,11 +12,14 @@ follow from that, all reachable from a normal verify or enroll.
      user_id->data[max_len] = '\0';
 
    The array holds exactly max_len bytes, so index max_len is out of
-   bounds. When max_len is 0 the GByteArray has never allocated and
-   ->data is NULL, so this is a NULL pointer write. max_len is 0 whenever
-   the reply is exactly as long as the header, which is what an
-   04f3:0c00 returns: finger_info (ff 12) is rejected on that PID with a
-   2-byte `40 ff`.
+   bounds unconditionally -- a one-byte heap overflow on any reply, on
+   any device. When max_len is 0 the GByteArray has never allocated and
+   ->data is NULL, so it degenerates into a NULL pointer write. max_len
+   is 0 whenever the reply is exactly as long as the header, which is
+   what finger_info returns on an 04f3:0c00 when it is issued with no
+   successful identify since the device was opened. Both call sites in
+   this driver identify first, so that state is not reached here; the
+   write is still out of bounds on every call.
 
 2. Unsigned underflow defeats the bounds check:
 
@@ -52,8 +55,8 @@ memcpy() with it.
 Also guard the ENROLL_COMMIT log statement, which reads data_in[2] after
 asserting only that two bytes are present.
 
-Confirmed under AddressSanitizer with the reply an 04f3:0c00 actually
-sends. Before, with `40 ff`:
+Confirmed under AddressSanitizer with a synthesised short reply. Before,
+with `40 ff`:
 
   AddressSanitizer: SEGV on unknown address 0x000000000000
   The signal is caused by a WRITE memory access.

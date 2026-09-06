@@ -17,14 +17,24 @@ The `0c00` findings follow it.
 
 ---
 
-## A double free on every rejected finger, plus three `04f3:0c00` findings
+## `04f3:0c00` works on this branch — plus a double free on every rejected finger
 
 Hi @depau — thanks for keeping this driver alive for as long as you have.
 
 I have an **`04f3:0c00`**, which is in this MR's `id_table` but which I don't
-think you have hardware for. I built the branch at `11f0316d` and ran it. The
-first finding below is not about `0c00` at all and should reproduce on your
-`0c4c`; the rest are `0c00`-specific. Patch attached for the first one.
+think you have hardware for. I built the branch at `11f0316d` and ran it.
+
+**The headline is that it works.** Enroll, commit, identify, verify and delete
+all function on `0c00`. I have three fingers enrolled; each verifies to its own
+slot with its own user id, and PAM authentication through fprintd opens root
+sessions. libfprint currently tracks this PID in
+`allowlist_id_table[]` as known-unsupported, and on this branch it plainly
+isn't.
+
+The rest of this is what I found while getting there. The first item is not
+`0c00`-specific and should reproduce on your `0c4c` — it is a memory-safety bug
+and there's a patch attached. Two more are `0c00` protocol notes, and one is a
+design question rather than a bug.
 
 ### Hardware
 
@@ -60,7 +70,16 @@ Framing is exactly as the driver describes — `[0x40][opcode]` out on EP 0x01,
 reply on EP 0x83 beginning `0x40`:
 
 ```
-get_enrolled_count   OUT 40 ff 04   ->   IN 40 01     (78 µs)
+get_enrolled_count   OUT 40 ff 04   ->   IN 40 03     (128 µs, three enrolled)
+```
+
+And end to end, each finger matching to its own slot:
+
+```
+verified as           identify   user id rebuilt from the finger_info reply
+right-thumb (6)       slot 2     FP1-20260906-6-3EC6E5EF-jvikramsrd
+right-index (7)       slot 0     FP1-20260906-7-1B3AC5EE-jvikramsrd
+right-middle (8)      slot 1     FP1-20260906-8-00B0ACA7-jvikramsrd
 ```
 
 ---
@@ -157,7 +176,7 @@ finger to `fprintd-verify` five or six times in a row.
 
 `elanmoc2_get_user_id_string()` trusts the length of a reply that comes
 straight off the wire. Patch attached; all three are confirmed under
-AddressSanitizer with the bytes an `0c00` actually sends.
+AddressSanitizer.
 
 **(a) One-past-the-end write, on every call.**
 
@@ -167,10 +186,18 @@ g_byte_array_set_size (user_id, max_len);
 user_id->data[max_len] = '\0';          /* index max_len of a max_len array */
 ```
 
-When `max_len == 0` the `GByteArray` has never allocated and `->data` is
-`NULL`, so this is a NULL pointer write. `max_len` is 0 whenever the reply is
-exactly as long as the header — which is what `0c00` returns, because
-`finger_info` is rejected there with a 2-byte `40 ff` (§4):
+This is out of bounds unconditionally: the array holds exactly `max_len`
+bytes, so `max_len` is never a valid index, whatever the device or the reply.
+For a non-empty reply it is a one-byte heap overflow.
+
+The `max_len == 0` case is worse — the `GByteArray` has never allocated, so
+`->data` is `NULL` and this becomes a NULL pointer write. That needs a reply
+exactly as long as the header. I should be precise about when an `0c00`
+produces one, because my first draft of this report got it wrong: `finger_info`
+answers `40 ff` when it is issued with **no successful identify since the
+device was opened** (§4). Both of your call sites identify first, so the driver
+as written does not reach it on this PID — the crash below is from a
+synthesised short reply, not from a live capture:
 
 ```
 == V1: 2-byte reply, normal device (offset 2) ==
@@ -226,24 +253,13 @@ empty user ID and return cleanly under ASan and UBSan, while a well-formed
 64-byte reply still yields the identical 62-byte user ID. Raw output:
 `logs/20260906T105511Z_asan-elanmoc2-user-id.txt`, reproducers in `scripts/asan-repro-*.c`.
 
-## 3. `0c00`: enroll can escalate to a full sensor wipe
+## 3. A design question: failed delete escalates to a full sensor wipe
 
-`check_enroll_collision` on this device returns:
+This started as a `0c00` bug report. It isn't one — I could not substantiate
+it, and I'd rather say so than let it stand. What's left is a design question
+about code that is device-independent.
 
-```
-OUT 40 ff 10   ->   IN 40 00 ff     (39 ms, returns without waiting for a finger)
-```
-
-`resp[1] = 0x00`, so in `elanmoc2_get_finger_error()`:
-
-```c
-if ((data_in[1] & 0xF0) == 0) { *out_can_retry = TRUE; return NULL; }
-```
-
-no error is raised, `ENROLL_GET_ENROLLED_FINGER_INFO` takes the "finger already
-enrolled" branch with `print_index = 0`, and issues `finger_info` — which this
-device rejects (§4). `ENROLL_ATTEMPT_DELETE` then builds a delete from a
-malformed reply and fails. Then:
+The mechanism is real and it is in the tree today:
 
 ```c
 case ENROLL_CHECK_DELETED:
@@ -253,19 +269,34 @@ case ENROLL_CHECK_DELETED:
   }
 ```
 
-So on `0c00`, a routine `fprintd-enroll` can destroy every stored template. This
-matters today: people are installing this driver on `0c00` via AUR and the
-Debian packaging.
+**The question:** should one failed delete erase every enrolled template? Losing
+every finger because a single delete failed is a surprising outcome for someone
+who asked to *add* one, and the user is never told it happened. Failing the
+enroll instead seems safer on any device. That holds regardless of whether
+anything actually triggers it.
 
-Two suggestions, independent of each other:
+**What I could not substantiate.** I originally claimed a routine
+`fprintd-enroll` reaches this on `0c00`, via a `finger_info` rejection
+producing a malformed delete. Two things sank it:
 
-1. Don't escalate a failed delete into a full wipe on **any** device — fail the
-   enroll instead. Losing every enrolled finger because one delete failed is a
-   surprising outcome for someone who asked to *add* a finger.
-2. `cmd_check_enroll_collision` declares `in_len = 3` but only `resp[1]` is ever
-   read. Here `resp[2] = 0xff` — possibly the real "not enrolled" indicator, in
-   which case `0c00` should be jumping straight to `ENROLL_ENROLL`. I haven't
-   assumed either way.
+- `finger_info` is **not** rejected on `0c00`. It answers correctly whenever an
+  identify precedes it (§4), which is exactly the case in
+  `ENROLL_GET_ENROLLED_FINGER_INFO` — `print_index` is set from the identify
+  reply immediately before. So the delete is built from a well-formed record
+  and there is no reason to expect it to fail.
+- The enroll path never issues `check_enroll_collision` (`ff 10`) at all. I had
+  built the chain on that command; tracing the state machine on hardware, it is
+  never sent during enrollment.
+
+For completeness, `ff 10` does answer on this device when issued directly, and
+the second byte may be worth a look independently of any of the above:
+
+```
+OUT 40 ff 10   ->   IN 40 00 ff     (39 ms, returns without waiting for a finger)
+```
+
+`cmd_check_enroll_collision` declares `in_len = 3` but only `resp[1]` is read.
+Here `resp[2] = 0xff`. I don't know what it means and I'm not assuming.
 
 ### Adding `delete` also removes the path's reachability
 
@@ -305,45 +336,48 @@ That suggests the in-enroll delete-and-retry dance may not need to exist at
 all for fprintd users, though I don't know what other libfprint clients rely
 on. Raw journal: `logs/20260906T111322Z_reenroll-fprintd-deletes-first.txt`.
 
-## 4. `0c00`: `finger_info` (`ff 12`) is rejected on every slot
+## 4. `0c00`: `finger_info` (`ff 12`) ignores its slot argument
+
+This one is latent — it costs you nothing today — but it is a real protocol
+difference on this PID and it will bite whoever next writes code that walks
+slots.
+
+`ff 12` on `0c00` returns the record of the **most recently identified
+finger**, regardless of the index in payload byte 3. With no successful
+identify since the device was opened, it returns a 2-byte `40 ff`.
+
+Three fingers enrolled (6, 7, 8). After a verify that matched finger 6, every
+one of the ten slots answers identically — including the seven that hold
+nothing:
 
 ```
-finger_info(0..9)   OUT 40 ff 12 NN   ->   IN 40 ff     (155-183 µs, identical for all 10 slots)
+get_enrolled_count -> 40 03
+slot 0..9  ->  40 00 "FP1-20260906-6-3EC6E5EF-jvikramsrd"   (all ten)
 ```
 
-Two bytes instead of the expected 64, with status `0xff`. By the driver's own
-rule in `elanmoc2_get_finger_error()` the most-significant nibble is set, so
-this is a terminal error, and `0xff` isn't in the `ELANMOC2_RESP_*` list.
+After a verify that matched finger 8 instead, the same ten slots return
+finger 8's record instead. The reply tracks the last match, not the index:
 
-`ff 04` works, so `0xff`-family opcodes are accepted in general — `ff 12`
-specifically appears unsupported or differently shaped on this PID.
+```
+slot 0..9  ->  40 00 "FP1-20260906-8-00B0ACA7-jvikramsrd"   (all ten)
+```
 
-Since `IDENTIFY_GET_FINGER_INFO` runs after every successful match and
-`elanmoc2_cmd_transceive()` sets `short_is_error = TRUE`, **the identify path
-can't complete on `0c00` as currently written.** `0c00` likely needs a quirk
-flag of its own, in the manner of `ELANMOC2_DEV_0C5E`.
+**Your driver is unaffected as written**, and I want to be clear about that.
+Both `cmd_finger_info` call sites — `IDENTIFY_GET_FINGER_INFO`, and the
+re-enroll check that sets `print_index` from the identify reply — issue it
+immediately after an `ff 03` that just named the slot. So the record you get
+back is always the one you wanted, by construction. There is no `list` vfunc,
+so nothing else enumerates. Verify and identify work correctly on `0c00`; I
+have three fingers enrolled and each matches to its own slot with its own
+user id.
 
-Two things I checked so you don't have to:
+Where it would bite is any future path that reads a slot without identifying
+first — enumerating stored prints, a delete-by-index, a storage audit. On this
+PID those would all silently return the same record.
 
-- **The template really is there.** `get_enrolled_count` (`ff 04`) reads `0`
-  with nothing enrolled and `1` after a commit, so the count byte behaves
-  correctly on this PID and the sensor holds what it says it holds. `ff 12` is
-  the only part that diverges. (I've only seen the values `0` and `1`, so I
-  can't claim it counts past one.)
-- **There is no HID path to fall back on.** The interface is
-  `bInterfaceClass 0xff` but still carries a HID descriptor advertising a
-  21-byte report descriptor. I fetched it with a standard
-  `GET_DESCRIPTOR(0x22)`:
-
-  ```
-  09 c7 a1 01 05 ff 85 bc 09 c4 15 00 25 ff 95 07 75 08 b1 02 c0
-  ```
-
-  That is one vendor-defined Application collection holding a single **Feature**
-  report (ID `0xBC`, Report Count 7 × Report Size 8). No Input item, no Output
-  item, and no interrupt endpoint on the device — so it's a control-endpoint
-  side channel, not an alternative data path. Ignoring it, as the driver does,
-  looks right.
+I don't know whether this is `0c00`-specific. It is worth someone with a
+`0c4c` running the equivalent check, which is two commands: identify with one
+finger, then read a slot belonging to a different one.
 
 ## 5. `0c00`: `get_fw_ver` reply carries no `0x40` magic
 
@@ -369,15 +403,20 @@ magic-exempt path, or dropping the definition.
 
 ## What I still can't answer
 
-- **Why `ff 12` is rejected.** I haven't gone opcode-hunting for a replacement
-  (see the note below), so I can't tell you whether it's a different opcode, a
-  different payload shape, or missing prior state.
-- **Whether `get_enrolled_count` counts past 1.** I've observed `0` and `1`
-  and they track the sensor's actual contents, which is enough to say it isn't
-  a constant status byte — but I haven't had two templates on the sensor at
-  once to confirm it increments.
-- **What the `0xBC` HID feature report holds.** Reading it means issuing a
-  vendor `GET_REPORT`, and I've kept to read-only standard requests.
+- **Whether `ff 12` ignoring its slot index is `0c00`-specific.** I have only
+  this PID. It's two commands to check on a `0c4c`: identify with one finger,
+  then read a slot belonging to a different one.
+- **What `resp[2]` of `check_enroll_collision` means.** It's `0xff` here and
+  the driver never reads it.
+- **What the `0xBC` HID feature report holds.** The interface advertises a
+  21-byte HID report descriptor despite being `bInterfaceClass 0xff`; it
+  declares a single vendor Feature report and no Input or Output items, so it
+  is a control-endpoint side channel and your ignoring it looks correct.
+  Reading its contents means a vendor `GET_REPORT` and I've kept to read-only
+  standard requests.
+
+`get_enrolled_count` I *can* now answer: it's a genuine count, not a status
+byte — `0` with nothing enrolled, `3` with three.
 
 ## Offer
 

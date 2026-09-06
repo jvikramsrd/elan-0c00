@@ -60,14 +60,23 @@ independent testing on real `0c00` hardware.
 ### What has actually been confirmed on `0c00`
 
 ```
-get_enrolled_count   OUT 40 ff 04      ->  IN 40 01     ( 78 µs)   framing works; real count
+get_enrolled_count   OUT 40 ff 04      ->  IN 40 03     (128 µs)   real count, three enrolled
 get_fw_ver           OUT 40 19         ->  IN 02 83     ( 94 µs)   no frame magic; BCD 2.83
-finger_info(0..9)    OUT 40 ff 12 NN   ->  IN 40 ff     (~170 µs)  rejected, all 10 slots
+finger_info(0..9)    OUT 40 ff 12 NN   ->  IN 40 00 ..  (~230 µs)  same record for all 10 slots
 ```
 
-The count byte is genuine, not a status: it reads `0` with nothing enrolled and
-`1` with one template stored, so the sensor holds what it reports and `ff 12`
-is the sole point of divergence.
+**The sensor works.** Enroll, commit, identify, verify and delete all function
+on this branch; three fingers are enrolled and each verifies to its own slot.
+libfprint lists `0c00` in `allowlist_id_table[]` as known-unsupported, and on
+MR !330 it isn't.
+
+`finger_info` (`ff 12`) ignores its slot argument here — it returns the record
+of the most recently identified finger, and `40 ff` when no identify has
+succeeded since the device was opened. That is latent, not a live bug: both
+call sites in the driver identify first. It is also why an earlier revision of
+these notes wrongly recorded `ff 12` as "rejected"; probing a match-on-chip
+command cold, outside the driver's state machine, measures sensor state rather
+than command support.
 
 The interface also carries a stray HID descriptor despite being
 `bInterfaceClass 0xff`. Its 21-byte report descriptor is one vendor Feature

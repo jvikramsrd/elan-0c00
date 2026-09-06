@@ -99,6 +99,30 @@ without asking).
 - H3: The HID report descriptor may name a vendor usage page that identifies the
   protocol family. **This is testable with a read-only standard request.**
 
+## CORRECTION LOG (2026-09-06, late session)
+
+Three claims in this file and in docs/ were wrong and have been fixed. Recorded
+here because the *reason* they were wrong generalises:
+
+1. "finger_info (ff 12) is rejected on 0c00, all ten slots." It is not. ff 12
+   ignores its slot argument and returns the last-identified finger's record;
+   it answers `40 ff` only when no identify has succeeded since open. elanctl
+   probes cold, so it was measuring sensor state, not command support.
+2. "The identify path cannot complete on 0c00." It completes. Three fingers
+   enrolled, each verifying to its own slot; PAM opens root sessions on it.
+3. "A routine fprintd-enroll on 0c00 can wipe every template." Not
+   substantiated. The chain rested on (1), and on check_enroll_collision
+   driving the enroll path, which tracing shows it never does.
+
+THE GENERAL LESSON: verify-crash-test.sh deliberately uses WRONG fingers,
+because rejections drive the double-free retry loop. A rejection returns early
+and never issues ff 12. So the test that produced the PASSED result structurally
+could not exercise the match path -- and the match path was the one docs made
+claims about. A passing test proved something real, and nothing about the thing
+next to it.
+
+Evidence: logs/20260906T132221Z_ff12-ignores-slot-index.txt
+
 ## OPEN QUESTIONS
 - ~~What are the 21 bytes of the HID report descriptor?~~ **ANSWERED** (loop 2+,
   `sudo probe`): `09 c7 a1 01 05 ff 85 bc 09 c4 15 00 25 ff 95 07 75 08 b1 02 c0`
