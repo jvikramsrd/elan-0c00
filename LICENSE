@@ -1,0 +1,8 @@
+This project is licensed under the GNU Lesser General Public License,
+version 2.1 or (at your option) any later version.
+
+The protocol implementation in src/proto.rs and src/device.rs was derived from
+the `elanmoc2` libfprint driver by Davide Depau, which is licensed
+LGPL-2.1-or-later. See docs/CONTRIBUTING-UPSTREAM.md for the reasoning.
+
+Full licence text: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt

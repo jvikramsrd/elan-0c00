@@ -1,0 +1,24 @@
+[package]
+name = "elan-0c00"
+version = "0.1.0"
+edition = "2021"
+description = "Userspace driver for ELAN elanmoc2 fingerprint sensors (04f3:0c00)"
+license = "LGPL-2.1-or-later"
+readme = "README.md"
+keywords = ["fingerprint", "usb", "elan", "libfprint", "biometrics"]
+categories = ["hardware-support"]
+
+[dependencies]
+rusb = "0.9"
+
+[lib]
+name = "elan_0c00"
+path = "src/lib.rs"
+
+[[bin]]
+name = "probe"
+path = "src/bin/probe.rs"
+
+[[bin]]
+name = "elanctl"
+path = "src/bin/elanctl.rs"

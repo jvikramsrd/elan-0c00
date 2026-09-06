@@ -1,0 +1,28 @@
+diff --git i/libfprint/drivers/elanmoc2/elanmoc2.c w/libfprint/drivers/elanmoc2/elanmoc2.c
+index bec6aeb2..f7578503 100644
+--- i/libfprint/drivers/elanmoc2/elanmoc2.c
++++ w/libfprint/drivers/elanmoc2/elanmoc2.c
+@@ -857,9 +857,20 @@ elanmoc2_enroll_run_state (FpiSsm *ssm, FpDevice *device)
+ 
+         if (data_in[1] != 0)
+           {
+-            fp_info ("Failed to delete finger %d, wiping sensor",
+-                     self->print_index);
+-            fpi_ssm_jump_to_state (ssm, ENROLL_WIPE_SENSOR);
++            /* Do not escalate a failed delete into wiping every enrolled
++             * finger. On 04f3:0c00 the preceding finger_info (ff 12) is
++             * rejected with `40 ff`, so the delete is built from a malformed
++             * reply and always fails -- which silently destroyed all stored
++             * templates. Fail the enroll instead and leave storage alone. */
++            fp_warn ("Failed to delete finger %d; aborting enroll rather than "
++                     "wiping the sensor", self->print_index);
++            error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
++                                              "Could not delete the existing "
++                                              "finger; refusing to wipe the "
++                                              "sensor");
++            fpi_device_enroll_complete (device, NULL, g_steal_pointer (&error));
++            fpi_ssm_mark_completed (g_steal_pointer (&self->ssm));
++            self->enroll_print = NULL;
+           }
+         else
+           {
