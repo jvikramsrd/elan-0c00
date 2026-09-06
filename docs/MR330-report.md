@@ -267,6 +267,44 @@ Two suggestions, independent of each other:
    which case `0c00` should be jumping straight to `ENROLL_ENROLL`. I haven't
    assumed either way.
 
+### Adding `delete` also removes the path's reachability
+
+Worth knowing before you decide how to fix this. I implemented
+`dev_class->delete` locally (`elanmoc2_delete_print`, using the same framing
+`ENROLL_ATTEMPT_DELETE` uses) and it works on `0c00`:
+
+```
+fprintd: [elanmoc2] New delete operation
+fprintd: Deleting finger 0 (user id 34 bytes)
+fprintd: Finger 0 deleted
+fprintd: [elanmoc2] DELETE_NUM_STATES completed successfully
+```
+
+`clear_storage` works too — wipe sent, enrolled count re-read as 0, SSM
+completed.
+
+The side effect is the interesting part. With a `delete` available, fprintd
+deletes the existing print through the delete API and *then* starts a fresh
+enroll:
+
+```
+fprintd: Deleting enrolled finger right-index-finger for user jvikramsrd
+   ... delete ... clear storage ...
+fprintd: [elanmoc2] New enroll operation
+fprintd: Enrolled count is 0, proceeding with enroll stage
+   ... 8 stages ... enroll-completed
+```
+
+So `ENROLL_EARLY_REENROLL_CHECK` → `ENROLL_GET_ENROLLED_FINGER_INFO` →
+`ENROLL_ATTEMPT_DELETE` is never entered through fprintd once `delete` exists.
+Without `delete` — which is the state of this MR today — fprintd has no way to
+remove the print first, so the driver's own collision path has to run, and on
+`0c00` that is the route to the wipe.
+
+That suggests the in-enroll delete-and-retry dance may not need to exist at
+all for fprintd users, though I don't know what other libfprint clients rely
+on. Raw journal: `logs/20260906T111322Z_reenroll-fprintd-deletes-first.txt`.
+
 ## 4. `0c00`: `finger_info` (`ff 12`) is rejected on every slot
 
 ```
