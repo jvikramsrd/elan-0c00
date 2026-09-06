@@ -1,0 +1,238 @@
+From: Jyothi Vikrama Simha Reddy Dirisinapu <jvikramsrd@gmail.com>
+Subject: [PATCH] elanmoc2: Fix memory-safety bugs parsing the finger_info reply
+
+elanmoc2_get_user_id_string() trusts the length of a reply that comes
+straight off the wire from the sensor. Three separate memory-safety bugs
+follow from that, all reachable from a normal verify or enroll.
+
+1. One-past-the-end write, on every call:
+
+     g_byte_array_set_size (user_id, max_len);
+     ...
+     user_id->data[max_len] = '\0';
+
+   The array holds exactly max_len bytes, so index max_len is out of
+   bounds. When max_len is 0 the GByteArray has never allocated and
+   ->data is NULL, so this is a NULL pointer write. max_len is 0 whenever
+   the reply is exactly as long as the header, which is what an
+   04f3:0c00 returns: finger_info (ff 12) is rejected on that PID with a
+   2-byte `40 ff`.
+
+2. Unsigned underflow defeats the bounds check:
+
+     guint max_len = MIN (elanmoc2_get_user_id_max_length (self),
+                          g_bytes_get_size (finger_info_response) - offset);
+
+   g_bytes_get_size() returns gsize. If the reply is shorter than offset
+   the subtraction wraps to ~2^64, MIN() selects the 61/62-byte maximum,
+   and the memcpy() reads that many bytes out of a much smaller buffer.
+   Reachable with a 2-byte reply on a 0c5e, where offset is 3.
+
+3. ENROLL_ATTEMPT_DELETE copies a fixed 62 bytes out of that buffer:
+
+     gsize user_id_bytes = MIN (cmd_delete.out_len - 4,
+                                ELANMOC2_USER_ID_MAX_LEN);
+     memcpy (&buffer_out->data[4],
+             g_bytes_get_data (user_id, NULL), user_id_bytes);
+
+   Neither operand of the MIN() depends on how many bytes the sensor
+   actually returned, so the length is always 62. On 04f3:0c00 the
+   GBytes is empty and g_bytes_get_data() returns NULL. The sibling
+   DELETE_SEND state already bounds this by the real length; this call
+   site was not updated to match.
+
+Fix all three by making the helper take the reply length into account:
+compare before subtracting so the length cannot underflow, allocate one
+extra byte so the terminator is always in bounds, and return the payload
+length to the caller. The helper now returns a NUL-terminated gchar *,
+which is what both call sites want anyway -- one passes it to
+g_str_has_prefix() and fpi_print_fill_from_user_id(), the other bounds a
+memcpy() with it.
+
+Also guard the ENROLL_COMMIT log statement, which reads data_in[2] after
+asserting only that two bytes are present.
+
+Confirmed under AddressSanitizer with the reply an 04f3:0c00 actually
+sends. Before, with `40 ff`:
+
+  AddressSanitizer: SEGV on unknown address 0x000000000000
+  The signal is caused by a WRITE memory access.
+    #0 get_user_id_string_upstream ... [max_len=0 array->data=(nil)]
+
+and with a 2-byte reply on the 0c5e path:
+
+  AddressSanitizer: heap-buffer-overflow
+  READ of size 61 at 0x7b8a53de0013
+  0x7b8a53de0013 is located 1 bytes after 2-byte region
+
+and the enroll-delete memcpy:
+
+  user_id real size = 0, memcpy len = 62, src = (nil)
+  AddressSanitizer: SEGV ... caused by a READ memory access.
+
+After the patch the same inputs -- plus 0- and 1-byte replies -- parse to
+an empty user ID and return cleanly under ASan and UBSan, while a
+well-formed 64-byte reply still yields the identical 62-byte user ID.
+
+libfprint's test suite shows the same 3 pre-existing failures
+(udev-hwdb, fpi-device, metainfo-validate) before and after, and
+elanmoc2.c compiles warning-free.
+
+Signed-off-by: Jyothi Vikrama Simha Reddy Dirisinapu <jvikramsrd@gmail.com>
+---
+--- i/libfprint/drivers/elanmoc2/elanmoc2.c
++++ w/libfprint/drivers/elanmoc2/elanmoc2.c
+@@ -228,25 +228,46 @@
+          ELANMOC2_USER_ID_MAX_LEN;
+ }
+ 
+-static GBytes *
++/**
++ * elanmoc2_get_user_id_string:
++ * @self: #FpiDeviceElanMoC2 pointer
++ * @finger_info_response: raw finger_info reply from the sensor
++ * @out_len: (out) (optional): length of the user ID, excluding the terminator
++ *
++ * Extracts the user ID from a finger_info reply.
++ *
++ * The reply is supplied by the device and is not trusted: it may be shorter
++ * than the header skipped here, and the sensor never NUL-terminates the user
++ * ID. The returned buffer is allocated with room for a terminator and is
++ * always NUL-terminated, so callers may use it as a C string.
++ *
++ * Returns: (transfer full): a NUL-terminated buffer holding @out_len bytes
++ */
++static gchar *
+ elanmoc2_get_user_id_string (FpiDeviceElanMoC2 *self,
+-                             GBytes            *finger_info_response)
++                             GBytes            *finger_info_response,
++                             gsize             *out_len)
+ {
+-  GByteArray *user_id = g_byte_array_new ();
++  gsize resp_len = 0;
++  const guint8 *data = g_bytes_get_data (finger_info_response, &resp_len);
++  const gsize offset = self->dev_type == ELANMOC2_DEV_0C5E ? 3 : 2;
++  gsize max_len = 0;
+ 
+-  guint offset = self->dev_type == ELANMOC2_DEV_0C5E ? 3 : 2;
+-  guint max_len = MIN (elanmoc2_get_user_id_max_length (self),
+-                       g_bytes_get_size (finger_info_response) - offset);
++  /* Compare before subtracting. g_bytes_get_size() is unsigned, so a reply
++   * shorter than the header would wrap to a huge value and defeat the MIN()
++   * bound, making the memcpy() below read past the end of the reply. */
++  if (data != NULL && resp_len > offset)
++    max_len = MIN (elanmoc2_get_user_id_max_length (self), resp_len - offset);
+ 
+-  g_byte_array_set_size (user_id, max_len);
++  gchar *user_id = g_malloc0 (max_len + 1);
+ 
+-  /* The string must be copied since the input data is not guaranteed to be
+-   * null-terminated */
+-  const guint8 *data = g_bytes_get_data (finger_info_response, NULL);
+-  memcpy (user_id->data, &data[offset], max_len);
+-  user_id->data[max_len] = '\0';
++  if (max_len > 0)
++    memcpy (user_id, &data[offset], max_len);
+ 
+-  return g_byte_array_free_to_bytes (user_id);
++  if (out_len != NULL)
++    *out_len = max_len;
++
++  return user_id;
+ }
+ 
+ static FpPrint *
+@@ -254,22 +275,22 @@
+                                      guint8             finger_id,
+                                      GBytes            *finger_info_resp)
+ {
+-  g_autoptr(GBytes) user_id = elanmoc2_get_user_id_string (self,
+-                                                           finger_info_resp);
+-  guint8 user_id_len = g_bytes_get_size (user_id);
+-  const char *user_id_data = g_bytes_get_data (user_id, NULL);
++  gsize user_id_len = 0;
++  g_autofree gchar *user_id = elanmoc2_get_user_id_string (self,
++                                                           finger_info_resp,
++                                                           &user_id_len);
+ 
+-  if (g_str_has_prefix ( user_id_data, "FP"))
++  if (g_str_has_prefix (user_id, "FP"))
+     {
+-      user_id_len = strnlen (user_id_data, user_id_len);
+-      fp_info ("Creating new print: finger %d, user id[%d]: %s",
++      user_id_len = strnlen (user_id, user_id_len);
++      fp_info ("Creating new print: finger %d, user id[%" G_GSIZE_FORMAT "]: %s",
+                finger_id,
+                user_id_len,
+-               (char *) user_id_data);
++               user_id);
+     }
+   else
+     {
+-      fp_info ("Creating new print: finger %d, user id[%d]: raw data",
++      fp_info ("Creating new print: finger %d, user id[%" G_GSIZE_FORMAT "]: raw data",
+                finger_id,
+                user_id_len);
+     }
+@@ -278,9 +299,9 @@
+     elanmoc2_print_new_with_user_id (self,
+                                      finger_id,
+                                      user_id_len,
+-                                     (const guint8 *) user_id_data);
++                                     (const guint8 *) user_id);
+ 
+-  if (!fpi_print_fill_from_user_id (print, (const char *) user_id_data))
++  if (!fpi_print_fill_from_user_id (print, user_id))
+     /* Fingerprint matched with on-sensor print, but the on-sensor print was
+      * not added by libfprint. Wipe it and report a failure. */
+     fp_info ("Finger info not generated by libfprint");
+@@ -840,8 +861,9 @@
+         g_assert_nonnull (buffer_in);
+ 
+         /* Attempt to delete the finger */
+-        g_autoptr(GBytes) user_id =
+-          elanmoc2_get_user_id_string (self, buffer_in);
++        gsize user_id_len = 0;
++        g_autofree gchar *user_id =
++          elanmoc2_get_user_id_string (self, buffer_in, &user_id_len);
+         g_autoptr(GByteArray) buffer_out =
+           elanmoc2_prepare_cmd (self, &cmd_delete);
+         if (buffer_out == NULL)
+@@ -849,13 +871,15 @@
+             fpi_ssm_next_state (ssm);
+             break;
+           }
+-        gsize user_id_bytes = MIN (cmd_delete.out_len - 4,
+-                                   ELANMOC2_USER_ID_MAX_LEN);
++        /* Bound by what the sensor actually returned, not by the largest user
++         * ID the command can carry: a short reply yields fewer bytes than
++         * that, and copying the difference would read past the buffer.
++         * DELETE_SEND already bounds this the same way. */
++        gsize user_id_bytes = MIN ((gsize) cmd_delete.out_len - 4, user_id_len);
+         g_assert (buffer_out->len >= 4 + user_id_bytes);
+         buffer_out->data[3] = 0xf0 | (self->print_index + 5);
+-        memcpy (&buffer_out->data[4],
+-                g_bytes_get_data (user_id, NULL),
+-                user_id_bytes);
++        if (user_id_bytes > 0)
++          memcpy (&buffer_out->data[4], user_id, user_id_bytes);
+         elanmoc2_cmd_transceive (device, &cmd_delete, buffer_out);
+ 
+         break;
+@@ -1011,8 +1035,14 @@
+ 
+         if (data_in[1] != 0)
+           {
+-            fp_info ("Finger is already enrolled at position %d, cannot commit",
+-                     data_in[2]);
++            /* data_in[2] is only present if the sensor actually sent it;
++             * cmd_check_enroll_collision declares in_len 3 but the reply is
++             * device-supplied and may be shorter. */
++            if (data_in_len >= 3)
++              fp_info ("Finger is already enrolled at position %d, cannot commit",
++                       data_in[2]);
++            else
++              fp_info ("Finger is already enrolled, cannot commit");
+             error = fpi_device_error_new_msg (FP_DEVICE_ERROR_DATA_DUPLICATE,
+                                               "Finger is already enrolled");
+             fpi_device_enroll_complete (device, NULL,

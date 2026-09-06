@@ -24,18 +24,22 @@ provides=(libfprint 'libfprint-2.so=2-64')
 conflicts=(libfprint)
 source=("git+https://gitlab.freedesktop.org/Depau/libfprint.git#commit=$_commit"
         '0002-elanmoc2-combined-wipe-fix-and-delete.patch'
-        '0003-elanmoc2-fix-double-free-of-retry-gerror.patch')
+        '0003-elanmoc2-fix-double-free-of-retry-gerror.patch'
+        '0004-elanmoc2-fix-memory-safety-in-user-id-parsing.patch')
 sha256sums=('SKIP'
             'e516101f2ae40ddd77d56b13c83e59c9dbcd43c2dcdfa000f3c2123213b49277'
-            'c961cfaf387c43790a26c936c99c9d4a7ce536d7850937863a3a8de03062b935')
+            'c961cfaf387c43790a26c936c99c9d4a7ce536d7850937863a3a8de03062b935'
+            '1638f641b3dba5541fca852774caf7c1f1e99a50c59d7fce06ec9eb39a49996d')
 
 prepare() {
   cd "$_srcname"
-  # Applied in series; both are against this exact commit.
+  # Applied in series; all are against this exact commit.
   #   0002 - don't wipe every enrolled finger when one delete fails, and add
   #          the missing delete implementation
   #   0003 - don't double-free the retry GError (crashes fprintd on any
   #          rejected finger, on every elanmoc2 device)
+  #   0004 - bound the finger_info user-ID parsing by the length the sensor
+  #          actually returned (NULL write / OOB read on a short reply)
   for p in "$srcdir"/000*.patch; do
     echo ":: applying $(basename "$p")"
     git apply -p1 "$p"

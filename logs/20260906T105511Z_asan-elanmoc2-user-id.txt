@@ -1,0 +1,58 @@
+# ASan/UBSan evidence for patch 0004 — captured 20260906T105511Z
+# host: Linux 7.1.9-arch1-2; glib: 2.88.3; gcc: 16
+# build: gcc -fsanitize=address[,undefined] -g -O0 <src> $(pkg-config --cflags --libs glib-2.0)
+
+############### UPSTREAM (unpatched) — V1: 2-byte reply, offset 2 ###############
+== V1: 2-byte reply, normal device (offset 2) ==
+    [max_len=0  array->data=(nil)]
+AddressSanitizer:DEADLYSIGNAL
+=================================================================
+==21990==ERROR: AddressSanitizer: SEGV on unknown address 0x000000000000 (pc 0x561026e1d401 bp 0x7ffc8e46ac70 sp 0x7ffc8e46ac30 T0)
+==21990==The signal is caused by a WRITE memory access.
+==21990==Hint: address points to the zero page.
+    #0 0x561026e1d401 in get_user_id_string_upstream /tmp/claude-1000/-home-jvikramsrd/69dd1e42-d14c-4871-bdee-0b755b485524/scratchpad/asan/repro.c:29
+    #1 0x561026e1d5be in main /tmp/claude-1000/-home-jvikramsrd/69dd1e42-d14c-4871-bdee-0b755b485524/scratchpad/asan/repro.c:44
+    #2 0x7f4637a27780  (/usr/lib/libc.so.6+0x27780) (BuildId: 503200d7fda94a5dc6058d7e0694e5d1dcb2e372)
+    #3 0x7f4637a278b8 in __libc_start_main (/usr/lib/libc.so.6+0x278b8) (BuildId: 503200d7fda94a5dc6058d7e0694e5d1dcb2e372)
+    #4 0x561026e1d194 in _start (/tmp/claude-1000/-home-jvikramsrd/69dd1e42-d14c-4871-bdee-0b755b485524/scratchpad/asan/repro+0x1194) (BuildId: c731b98a53078001b2c7cb77c97057280888683d)
+
+############### UPSTREAM (unpatched) — V2: underflow -> OOB read ###############
+== V2: underflow -> OOB read of device reply ==
+    computed max_len = 61  (from a 2-byte reply!)
+=================================================================
+==21996==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x7b4cf7be0013 at pc 0x7f2cf9529a22 bp 0x7ffe0b881030 sp 0x7ffe0b8807d8
+READ of size 61 at 0x7b4cf7be0013 thread T0
+    #0 0x7f2cf9529a21 in memcpy (/usr/lib/libasan.so.8+0x129a21) (BuildId: b8a4241051a1621937fdc46e867ba7ecb56d96ea)
+    #1 0x5626bae1b436 in main /tmp/claude-1000/-home-jvikramsrd/69dd1e42-d14c-4871-bdee-0b755b485524/scratchpad/asan/repro2.c:24
+    #2 0x7f2cf9027780  (/usr/lib/libc.so.6+0x27780) (BuildId: 503200d7fda94a5dc6058d7e0694e5d1dcb2e372)
+    #3 0x7f2cf90278b8 in __libc_start_main (/usr/lib/libc.so.6+0x278b8) (BuildId: 503200d7fda94a5dc6058d7e0694e5d1dcb2e372)
+    #4 0x5626bae1b174 in _start (/tmp/claude-1000/-home-jvikramsrd/69dd1e42-d14c-4871-bdee-0b755b485524/scratchpad/asan/repro2+0x1174) (BuildId: 04ee220f8dc1064e094fa39c2106869d8af58933)
+
+0x7b4cf7be0013 is located 1 bytes after 2-byte region [0x7b4cf7be0010,0x7b4cf7be0012)
+allocated by thread T0 here:
+    #0 0x7f2cf952c0c1 in malloc (/usr/lib/libasan.so.8+0x12c0c1) (BuildId: b8a4241051a1621937fdc46e867ba7ecb56d96ea)
+    #1 0x7f2cf93059da in g_malloc (/usr/lib/libglib-2.0.so.0+0x689da) (BuildId: cb17d184459352a7985a010f1cd3acef4a4f90d8)
+    #2 0x5626bae1b2e2 in main /tmp/claude-1000/-home-jvikramsrd/69dd1e42-d14c-4871-bdee-0b755b485524/scratchpad/asan/repro2.c:16
+
+############### UPSTREAM (unpatched) — V3: enroll-delete memcpy ###############
+== V3: enroll-delete fixed-size memcpy ==
+    user_id real size = 0, memcpy len = 62, src = (nil)
+AddressSanitizer:DEADLYSIGNAL
+=================================================================
+==21998==ERROR: AddressSanitizer: SEGV on unknown address 0x000000000000 (pc 0x7fc13417640d bp 0x7ffccb86c0f0 sp 0x7ffccb86c078 T0)
+==21998==The signal is caused by a READ memory access.
+==21998==Hint: address points to the zero page.
+    #0 0x7fc13417640d  (/usr/lib/libc.so.6+0x17640d) (BuildId: 503200d7fda94a5dc6058d7e0694e5d1dcb2e372)
+    #1 0x557bd3acf59d in main /tmp/claude-1000/-home-jvikramsrd/69dd1e42-d14c-4871-bdee-0b755b485524/scratchpad/asan/repro2.c:40
+    #2 0x7fc134027780  (/usr/lib/libc.so.6+0x27780) (BuildId: 503200d7fda94a5dc6058d7e0694e5d1dcb2e372)
+
+############### PATCHED — same inputs, ASan + UBSan ###############
+== patched helper, adversarial + normal replies ==
+  V1  2-byte reply, offset 2 (0c00)          len= 0  copy= 0  strprefix_ok=0  uid=""
+  V2  2-byte reply, offset 3 (0C5E)          len= 0  copy= 0  strprefix_ok=0  uid=""
+      1-byte reply, offset 2                 len= 0  copy= 0  strprefix_ok=0  uid=""
+fixed.c:30:32: runtime error: null pointer passed as argument 1, which is declared to never be null
+      0-byte reply, offset 2                 len= 0  copy= 0  strprefix_ok=0  uid=""
+      64-byte well-formed reply              len=62  copy=62  strprefix_ok=1  uid="FP1-abcdef0123"
+      64-byte well-formed, 0C5E              len=61  copy=61  strprefix_ok=0  uid="P1-abcdef0123"
+== all returned cleanly ==

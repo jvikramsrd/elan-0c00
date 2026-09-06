@@ -152,23 +152,78 @@ The fix is to steal the error at both report sites, and to set
 I'd expect this to be reproducible on `0c4c` too — just present the wrong
 finger to `fprintd-verify` five or six times in a row.
 
-## 2. Possible out-of-bounds write in `elanmoc2_get_user_id_string()`
+## 2. Three memory-safety bugs parsing the `finger_info` reply
 
-With the 2-byte `finger_info` reply this device returns (see §4):
+`elanmoc2_get_user_id_string()` trusts the length of a reply that comes
+straight off the wire. Patch attached; all three are confirmed under
+AddressSanitizer with the bytes an `0c00` actually sends.
+
+**(a) One-past-the-end write, on every call.**
+
+```c
+g_byte_array_set_size (user_id, max_len);
+...
+user_id->data[max_len] = '\0';          /* index max_len of a max_len array */
+```
+
+When `max_len == 0` the `GByteArray` has never allocated and `->data` is
+`NULL`, so this is a NULL pointer write. `max_len` is 0 whenever the reply is
+exactly as long as the header — which is what `0c00` returns, because
+`finger_info` is rejected there with a 2-byte `40 ff` (§4):
+
+```
+== V1: 2-byte reply, normal device (offset 2) ==
+    [max_len=0  array->data=(nil)]
+AddressSanitizer: SEGV on unknown address 0x000000000000
+The signal is caused by a WRITE memory access.
+```
+
+**(b) Unsigned underflow defeats the bounds check.**
 
 ```c
 guint max_len = MIN (elanmoc2_get_user_id_max_length (self),
                      g_bytes_get_size (finger_info_response) - offset);
-                     /* MIN(62, 2 - 2) == 0 */
-g_byte_array_set_size (user_id, max_len);      /* size 0 */
-...
-user_id->data[max_len] = '\0';                 /* index 0 of a 0-size array */
 ```
 
-That is a write past the end (or through a NULL `data`) whenever `finger_info`
-returns a short reply, which is reachable on any device that errors there. I
-haven't patched this one — the right bound depends on what you intend the
-minimum valid reply to be.
+`g_bytes_get_size()` returns `gsize`. A reply shorter than `offset` wraps the
+subtraction to ~2^64, `MIN()` then selects the 61/62-byte maximum, and the
+`memcpy()` reads that many bytes out of a much smaller buffer. Reachable with
+a 2-byte reply on an `0c5e`, where `offset` is 3:
+
+```
+    computed max_len = 61  (from a 2-byte reply!)
+AddressSanitizer: heap-buffer-overflow
+READ of size 61 at 0x7b8a53de0013
+0x7b8a53de0013 is located 1 bytes after 2-byte region
+```
+
+**(c) `ENROLL_ATTEMPT_DELETE` copies a fixed 62 bytes out of that buffer.**
+
+```c
+gsize user_id_bytes = MIN (cmd_delete.out_len - 4, ELANMOC2_USER_ID_MAX_LEN);
+memcpy (&buffer_out->data[4], g_bytes_get_data (user_id, NULL), user_id_bytes);
+```
+
+Neither operand depends on how many bytes the sensor returned, so the length
+is always 62. On `0c00` the `GBytes` is empty and `g_bytes_get_data()` returns
+`NULL`. `DELETE_SEND` already bounds this by the real length; this call site
+was not updated to match.
+
+```
+    user_id real size = 0, memcpy len = 62, src = (nil)
+AddressSanitizer: SEGV ... caused by a READ memory access.
+```
+
+The patch compares before subtracting, allocates one extra byte so the
+terminator is in bounds, and returns the payload length so the caller can
+bound its own copy. The helper now hands back a NUL-terminated `gchar *`,
+which is what both call sites want anyway. It also guards the `ENROLL_COMMIT`
+log line, which reads `data_in[2]` after asserting only two bytes.
+
+After the patch the same inputs — plus 0- and 1-byte replies — parse to an
+empty user ID and return cleanly under ASan and UBSan, while a well-formed
+64-byte reply still yields the identical 62-byte user ID. Raw output:
+`logs/20260906T105511Z_asan-elanmoc2-user-id.txt`, reproducers in `scripts/asan-repro-*.c`.
 
 ## 3. `0c00`: enroll can escalate to a full sensor wipe
 
