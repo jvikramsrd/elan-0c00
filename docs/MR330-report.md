@@ -323,6 +323,28 @@ Since `IDENTIFY_GET_FINGER_INFO` runs after every successful match and
 can't complete on `0c00` as currently written.** `0c00` likely needs a quirk
 flag of its own, in the manner of `ELANMOC2_DEV_0C5E`.
 
+Two things I checked so you don't have to:
+
+- **The template really is there.** `get_enrolled_count` (`ff 04`) reads `0`
+  with nothing enrolled and `1` after a commit, so the count byte behaves
+  correctly on this PID and the sensor holds what it says it holds. `ff 12` is
+  the only part that diverges. (I've only seen the values `0` and `1`, so I
+  can't claim it counts past one.)
+- **There is no HID path to fall back on.** The interface is
+  `bInterfaceClass 0xff` but still carries a HID descriptor advertising a
+  21-byte report descriptor. I fetched it with a standard
+  `GET_DESCRIPTOR(0x22)`:
+
+  ```
+  09 c7 a1 01 05 ff 85 bc 09 c4 15 00 25 ff 95 07 75 08 b1 02 c0
+  ```
+
+  That is one vendor-defined Application collection holding a single **Feature**
+  report (ID `0xBC`, Report Count 7 × Report Size 8). No Input item, no Output
+  item, and no interrupt endpoint on the device — so it's a control-endpoint
+  side channel, not an alternative data path. Ignoring it, as the driver does,
+  looks right.
+
 ## 5. `0c00`: `get_fw_ver` reply carries no `0x40` magic
 
 ```
@@ -345,12 +367,17 @@ never referenced in `elanmoc2.c`** — the command is never issued, so its reply
 framing has never been exercised. Worth either wiring it up with a
 magic-exempt path, or dropping the definition.
 
-## Open question I can't resolve
+## What I still can't answer
 
-`get_enrolled_count` returns `0x01`, but no slot returns readable content and
-all ten answer identically. So I can't tell whether `resp[1]` is genuinely a
-count here or a status byte. I've avoided assuming there's a template on the
-sensor.
+- **Why `ff 12` is rejected.** I haven't gone opcode-hunting for a replacement
+  (see the note below), so I can't tell you whether it's a different opcode, a
+  different payload shape, or missing prior state.
+- **Whether `get_enrolled_count` counts past 1.** I've observed `0` and `1`
+  and they track the sensor's actual contents, which is enough to say it isn't
+  a constant status byte — but I haven't had two templates on the sensor at
+  once to confirm it increments.
+- **What the `0xBC` HID feature report holds.** Reading it means issuing a
+  vendor `GET_REPORT`, and I've kept to read-only standard requests.
 
 ## Offer
 

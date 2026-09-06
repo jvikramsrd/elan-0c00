@@ -1,0 +1,70 @@
+# Read-only privileged probe of 04f3:0c00.
+#
+# Closes two open questions:
+#   * the 21-byte HID report descriptor (contents + why a bulk-only device has one)
+#   * whether the device volunteers data on a bulk IN with no prior OUT (it does not)
+#
+# Only standard, spec-defined requests were issued: the descriptor walk,
+# GET_DESCRIPTOR(0x22) on the interface, and passive bulk IN reads.
+# No vendor command was sent; device state unmodified.
+#
+# Run as: sudo ./target/release/probe
+#
+# NOTE: this capture predates the bcdDevice formatting fix in src/bin/probe.rs,
+# so the header below prints "2.8" where the device actually reports 2.83
+# (confirmed by lsusb and /sys/bus/usb/devices/1-4/bcdDevice = 0283).
+# The rebuilt binary prints 2.83.
+
+== DEVICE 04f3:0c00 ==
+  bus 1 addr 3
+  speed              Full
+  bcdUSB             2.00
+  bcdDevice          2.8
+  bDeviceClass       0x00
+  bMaxPacketSize0    8
+  bNumConfigurations 1
+
+== CONFIG 1 == interfaces=1 max_power=100mA self_powered=false
+  IF 0 alt 0: class=0xff sub=0x00 proto=0x00 eps=8
+    class-specific extra (9 B): 09 21 10 01 00 01 22 15 00
+    -> HID descriptor: bcdHID=1.10 country=0 numDesc=1 subordinate: type=0x22 len=21
+    EP 0x81 In Bulk wMaxPacketSize=64 bInterval=1
+    EP 0x01 Out Bulk wMaxPacketSize=64 bInterval=1
+    EP 0x82 In Bulk wMaxPacketSize=64 bInterval=1
+    EP 0x02 Out Bulk wMaxPacketSize=64 bInterval=1
+    EP 0x83 In Bulk wMaxPacketSize=64 bInterval=1
+    EP 0x03 Out Bulk wMaxPacketSize=64 bInterval=1
+    EP 0x84 In Bulk wMaxPacketSize=64 bInterval=1
+    EP 0x04 Out Bulk wMaxPacketSize=64 bInterval=1
+
+== OPEN ==
+  opened ok
+  languages: [Language { raw: 1033 }]
+  iManufacturer: Ok("ELAN")
+  iProduct: Ok("ELAN:ARM-M4")
+  iSerialNumber: <none>
+  no kernel driver on iface 0
+  claimed interface 0
+
+== HID REPORT DESCRIPTOR (standard GET_DESCRIPTOR, read-only) ==
+  got 21 bytes in 3.864434ms
+  09 c7 a1 01 05 ff 85 bc 09 c4 15 00 25 ff 95 07 75 08 b1 02 c0
+    [Local] Usage (0x09) = 0xc7 (199)
+    [Main] Collection (0xa1) = 0x1 (1)
+    [Global] Usage Page (0x05) = 0xff (255)
+    [Global] Report ID (0x85) = 0xbc (188)
+    [Local] Usage (0x09) = 0xc4 (196)
+    [Global] Logical Minimum (0x15) = 0x0 (0)
+    [Global] Logical Maximum (0x25) = 0xff (255)
+    [Global] Report Count (0x95) = 0x7 (7)
+    [Global] Report Size (0x75) = 0x8 (8)
+    [Main] Feature (0xb1) = 0x2 (2)
+    [Main] End Collection (0xc0) = 0x0 (0)
+
+== PASSIVE BULK IN (no OUT sent; short timeout expected) ==
+  EP 0x81: Operation timed out after 300.260058ms
+  EP 0x82: Operation timed out after 300.229537ms
+  EP 0x83: Operation timed out after 300.196383ms
+  EP 0x84: Operation timed out after 300.246007ms
+
+== done (released, device state unmodified) ==

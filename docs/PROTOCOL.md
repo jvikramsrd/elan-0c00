@@ -62,10 +62,56 @@ cannot decode and prints as `** UNRECOGNIZED: 09 21 10 01 00 01 22 15 00`:
 | 6 | subordinate bDescriptorType | `0x22` (Report) |
 | 7–8 | subordinate wDescriptorLength | **21 bytes** |
 
-The `elanmoc2` driver ignores this entirely and uses only bulk transfers. The
-21-byte report descriptor has **not** been fetched yet; `elanctl`'s sibling
-`probe` binary issues the standard `GET_DESCRIPTOR(0x22)` to retrieve it.
-Its contents are an open question.
+The `elanmoc2` driver ignores this entirely and uses only bulk transfers.
+
+### The 21-byte report descriptor  [OBSERVED]
+
+Fetched with `sudo probe`, which issues the standard `GET_DESCRIPTOR(0x22)`
+(bmRequestType `0x81`, IN | Standard | Interface) — read-only and spec-defined:
+
+```
+09 c7  a1 01  05 ff  85 bc  09 c4  15 00  25 ff  95 07  75 08  b1 02  c0
+```
+
+| bytes | item | meaning |
+|---|---|---|
+| `09 c7` | Local: Usage | `0xC7` |
+| `a1 01` | Main: Collection | Application |
+| `05 ff` | Global: Usage Page | `0xFF` (vendor-defined) |
+| `85 bc` | Global: Report ID | `0xBC` |
+| `09 c4` | Local: Usage | `0xC4` |
+| `15 00` | Global: Logical Minimum | 0 |
+| `25 ff` | Global: Logical Maximum | 255 |
+| `95 07` | Global: Report Count | 7 |
+| `75 08` | Global: Report Size | 8 bits |
+| `b1 02` | Main: **Feature** | Data, Var, Abs |
+| `c0` | Main: End Collection | |
+
+One vendor-defined Application collection containing exactly one **Feature**
+report: ID `0xBC`, seven 8-bit fields, so an 8-byte report counting the ID.
+
+The significant part is what is *absent*: **no Input item and no Output item.**
+A HID interface with only a Feature report has no data pipe — Feature reports
+travel over the control endpoint via `GET_REPORT`/`SET_REPORT`. That is
+consistent with the endpoint layout, which has no interrupt endpoint at all
+(all eight endpoints are bulk). So this descriptor does not describe a second
+data path competing with the bulk protocol; it describes a **control-endpoint
+side channel** that `elanmoc2` never uses.
+
+Two non-conformances worth recording:
+
+- `bInterfaceClass` is `0xff` (vendor-specific), **not** `0x03` (HID), yet the
+  interface carries a class-specific HID descriptor and answers
+  `GET_DESCRIPTOR(0x22)`. A HID descriptor on a non-HID interface is out of
+  spec; it reads as vestigial, most likely shared ELAN firmware scaffolding.
+- The first item is a Local `Usage` **before** any `Usage Page`, and the
+  `Usage Page` that follows is a 1-byte `0xFF` (page `0x00FF`) rather than a
+  2-byte page in the `0xFF00`–`0xFFFF` vendor range. Both are sloppy but
+  common in vendor firmware.
+
+Nothing here has been exercised — no `GET_REPORT` has been sent. What the
+`0xBC` feature report *contains* is untested, and probing it would mean issuing
+a vendor-defined request, which is outside the read-only scope of `probe`.
 
 ## Endpoint roles [PORTED]
 
@@ -164,17 +210,49 @@ returns a slot index, `finger_info` is then issued and rejected, the delete is
 built from a malformed reply and fails, and the unpatched driver escalates to
 `ENROLL_WIPE_SENSOR`.
 
-### 4. Unresolved contradiction  [OBSERVED]
+### 4. `resp[1]` is a real count, and `ff 12` is the broken part  [OBSERVED]
 
-`get_enrolled_count` reports `1`, but no slot returns readable content, and all
-ten slots answer identically. Either:
+This was recorded as an unresolved contradiction — `get_enrolled_count`
+reporting `1` while no slot returned readable content — with two candidate
+explanations: either `resp[1] = 0x01` is a *status* byte rather than a count,
+or the count is genuine and templates simply are not addressable through
+`ff 12` on this device.
 
-- `resp[1] = 0x01` is a *status* ("ok"), not a count, and the real count lives
-  elsewhere; or
-- the count is genuine and templates are simply not addressable through
-  `ff 12` on this device.
+**The second is correct.** The byte was observed taking two different values
+according to what the sensor actually held:
 
-Nothing captured so far distinguishes these. Do not assume the count is a count.
+| device state | `get_enrolled_count` | source |
+|---|---|---|
+| one template stored | `40 01` | `elanctl dump`, above |
+| after `delete` + wipe, nothing stored | `0` | driver log, below |
+
+From `logs/20260906T111322Z_reenroll-fprintd-deletes-first.txt`, after
+`DELETE_NUM_STATES` reported "Finger 0 deleted" and the wipe was sent:
+
+```
+[elanmoc2] IDENTIFY_NUM_STATES entering state 0
+Querying number of enrolled fingers
+Sent query for number of enrolled fingers
+[elanmoc2] IDENTIFY_NUM_STATES entering state 1
+No fingers enrolled, no need to identify finger
+...
+[elanmoc2] ENROLL_NUM_STATES entering state 1
+Enrolled count is 0, proceeding with enroll stage
+```
+
+Those are the reference driver's own reads of `data_in[1]` from `ff 04`. A
+fixed status byte cannot read `0x01` in one state and `0x00` in another, so
+`resp[1]` tracks device template state and the `[PORTED]` semantics below hold
+on `0c00`.
+
+**Limit of the evidence:** only the values `0` and `1` have been observed. That
+rules out a constant status byte, but does not by itself separate a true count
+from a boolean "holds at least one template". Distinguishing those needs a
+second template enrolled concurrently and a re-read — not yet done.
+
+The consequence for §2 is that the count was never the suspect part: the sensor
+genuinely holds the template it says it holds, and `ff 12` is where `0c00`
+diverges.
 
 ## Command table [PORTED]
 
@@ -277,16 +355,29 @@ top of the hardware; the hardware does not offer the capability.
 
 ## Open questions
 
-1. What are the 21 bytes of the HID report descriptor, and why does a
-   bulk-only vendor device advertise one? (`probe` fetches it; not yet run
-   with privileges.)
-2. **Why is `ff 12` rejected on `0c00`?** Different opcode, different payload
+1. **Why is `ff 12` rejected on `0c00`?** Different opcode, different payload
    shape, or does it require prior state the reference driver's state machine
    establishes?
-3. **Is `get_enrolled_count`'s `0x01` a count or a status?** This gates whether
-   the sensor really holds a template.
-4. `commit` and `delete` are both `out_len == 72`. The 69-byte payload layout
+2. `commit` and `delete` are both `out_len == 72`. The 69-byte payload layout
    after `40 ff XX` is not documented here and was not traced.
-5. Do endpoints `0x02`/`0x04`/`0x81`/`0x82` respond to anything on `0c00`?
-6. Does `0c00` need a quirk flag of its own, in the manner of
+3. Do endpoints `0x02`/`0x04`/`0x81`/`0x82` respond to anything on `0c00`?
+   (They volunteer nothing unprompted — see below — but have not been probed
+   with an OUT first.)
+4. Does `0c00` need a quirk flag of its own, in the manner of
    `ELANMOC2_DEV_0C5E`? The `ff 12` rejection suggests yes.
+5. What does the `0xBC` HID feature report contain? Reading it needs a
+   `GET_REPORT`, which is outside `probe`'s read-only standard-request scope.
+6. Does `get_enrolled_count` count past 1, or is it a "holds at least one"
+   flag? Only `0` and `1` have been observed.
+
+### Resolved
+
+- ~~What are the 21 bytes of the HID report descriptor, and why does a
+  bulk-only vendor device advertise one?~~ Fetched and decoded above: a single
+  vendor Feature report (ID `0xBC`, 7×8 bits) with no Input or Output items —
+  a control-endpoint side channel, not a data path.
+- ~~Is `get_enrolled_count`'s `0x01` a count or a status?~~ A count: it reads
+  `0` with nothing enrolled and `1` with one template stored (§4).
+- ~~Does the device volunteer any data on a bulk IN with no prior OUT?~~ No.
+  All four bulk IN endpoints (`0x81`, `0x82`, `0x83`, `0x84`) time out after
+  300 ms with nothing sent. The protocol is strictly request/response.

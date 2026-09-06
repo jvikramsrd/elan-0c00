@@ -100,10 +100,21 @@ without asking).
   protocol family. **This is testable with a read-only standard request.**
 
 ## OPEN QUESTIONS
-- What are the 21 bytes of the HID report descriptor?
-- Does the device volunteer any data on a bulk IN with no prior OUT?
-- Is this a match-on-chip (MOC) part (templates stored on device) or an image sensor?
+- ~~What are the 21 bytes of the HID report descriptor?~~ **ANSWERED** (loop 2+,
+  `sudo probe`): `09 c7 a1 01 05 ff 85 bc 09 c4 15 00 25 ff 95 07 75 08 b1 02 c0`
+  — one vendor Application collection holding a single Feature report (ID `0xBC`,
+  7 × 8 bits). No Input or Output items, and no interrupt endpoint exists, so it
+  is a control-endpoint side channel, not a second data path. Decoded in
+  `docs/PROTOCOL.md`.
+- ~~Does the device volunteer any data on a bulk IN with no prior OUT?~~
+  **ANSWERED: no.** All four bulk IN endpoints (`0x81`/`0x82`/`0x83`/`0x84`)
+  time out after 300 ms with nothing sent first. Strictly request/response.
+- ~~Is this a match-on-chip (MOC) part (templates stored on device) or an image
+  sensor?~~ **ANSWERED: MOC.** It is an `elanmoc2` part; enroll + commit store a
+  template on the sensor, and `get_enrolled_count` tracks it (0 with none, 1
+  with one).
 - Is a vendor firmware blob required before the sensor responds at all?
+  **No** — it answers `ff 04`, `ff 01`, `ff 11`, `ff 13` without one.
 
 ## NOT DONE (requires explicit approval)
 - Sending any vendor-specific command, including `elan`-family probe commands.
