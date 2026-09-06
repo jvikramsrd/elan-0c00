@@ -35,22 +35,23 @@ sudo rm -r /etc/systemd/system/fprintd.service.d && sudo systemctl daemon-reload
 <https://gitlab.freedesktop.org/users/sign_in> — sign in with GitHub or Google;
 it's a separate instance from gitlab.com and from your GitHub account.
 
-## 3. Make this repo public and fill in the link
+## 3. Make this repo public and fill in the link — DONE
 
-The comment ends with a placeholder:
+The comment now ends with:
 
 ```
 Full write-up, the probing tool, and the patches:
-<!-- add your repo link here, or delete this line -->
+<https://github.com/jvikramsrd/elan-0c00>
 ```
 
-Either flip the repo public and paste the URL:
+and the repo was made public with:
 
 ```sh
 gh repo edit jvikramsrd/elan-0c00 --visibility public --accept-visibility-change-consequences
 ```
 
-…or delete that line. Don't post a link to a private repo.
+Don't post a link to a private repo — if the repo ever goes private again,
+delete that line from the comment first.
 
 ## 4. Post the comment
 

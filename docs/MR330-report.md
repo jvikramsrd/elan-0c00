@@ -394,4 +394,4 @@ adjacent values are `ff 13` (delete) and `ff 99` (wipe) and I'd rather not
 guess on a sensor I care about.
 
 Full write-up, the probing tool, and the patches:
-<!-- add your repo link here, or delete this line -->
+<https://github.com/jvikramsrd/elan-0c00>
