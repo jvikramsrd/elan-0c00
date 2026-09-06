@@ -97,6 +97,55 @@ If @depau would rather keep !330 focused on the driver, both fixes stand on
 their own against `master` once the driver lands — the comment already offers
 that.
 
+## 6. Optional: push a branch to your own fd.o fork
+
+Attaching patches is enough. But a branch @depau can cherry-pick from is less
+work for him, and it is the route `HACKING.md` describes for "an enterprising
+hacker".
+
+**Do not push this repo to gitlab.freedesktop.org.** That instance is
+freedesktop.org's project infrastructure, not general code hosting, and a Rust
+reimplementation is not an fd.o project — see `CONTRIBUTING-UPSTREAM.md`. The
+only thing that belongs there is a fork of libfprint itself.
+
+The branch is already prepared in the scratch clone at `work/libfprint`
+(gitignored, so it is not part of this repo):
+
+```
+elanmoc2-memory-safety @ 4994bec6
+  4994bec6 elanmoc2: Fix memory-safety bugs parsing the finger_info reply
+  a2dd468f elanmoc2: Fix double free of the retry GError in identify/verify
+  11f0316d WIP add 0c7c          <- depau/elanmoc2, the MR !330 head
+```
+
+Both patches apply cleanly and the result compiles with no elanmoc2 warnings
+(`meson setup build -Ddrivers=elanmoc2 && ninja -C build`).
+
+To publish it:
+
+1. Fork <https://gitlab.freedesktop.org/libfprint/libfprint> in the fd.o web UI.
+   Forking works for any account; creating a *new* top-level project generally
+   does not, and needs a request on `freedesktop/freedesktop`.
+2. Add a credential — an SSH key, or a personal access token with `write_repo`
+   — under your fd.o profile.
+3. Push:
+
+```sh
+cd work/libfprint
+git remote add mine git@gitlab.freedesktop.org:<your-fd.o-user>/libfprint.git
+git push mine elanmoc2-memory-safety
+```
+
+Then link the branch from the MR comment. Say explicitly that it is based on
+`11f0316d` and is *not* a merge request — you are not trying to supersede !330.
+
+To rebuild the branch from scratch if `work/` is ever cleaned:
+
+```sh
+git checkout -B elanmoc2-memory-safety 11f0316d
+git am ../../patches/0003-*.patch ../../patches/0004-*.patch
+```
+
 ## Tone notes
 
 The report leads with the double free on purpose. It is the finding that:
