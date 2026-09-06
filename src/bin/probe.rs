@@ -44,14 +44,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  bus {} addr {}", device.bus_number(), device.address());
     println!("  speed              {:?}", device.speed());
     println!(
-        "  bcdUSB             {:x}.{:02x}",
+        "  bcdUSB             {:x}.{:x}{:x}",
         dd.usb_version().major(),
-        dd.usb_version().minor()
+        dd.usb_version().minor(),
+        dd.usb_version().sub_minor()
     );
     println!(
-        "  bcdDevice          {}.{}",
+        "  bcdDevice          {:x}.{:x}{:x}",
         dd.device_version().major(),
-        dd.device_version().minor()
+        dd.device_version().minor(),
+        dd.device_version().sub_minor()
     );
     println!("  bDeviceClass       0x{:02x}", dd.class_code());
     println!("  bMaxPacketSize0    {}", dd.max_packet_size());
