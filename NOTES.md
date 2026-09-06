@@ -334,9 +334,10 @@ documented). Replaced a `.collect::<Vec<String>>().join("")` with a `fold` per
 clippy pedantic.
 
 ## Documentation added
-- `docs/PROTOCOL.md` (214 lines) — full wire spec. Every claim tagged
+- `docs/PROTOCOL.md` (383 lines) — full wire spec. Every claim tagged
   **[OBSERVED]** (read off this machine's hardware) or **[PORTED]**
-  (transcribed from elanmoc2, unverified on 0c00). Includes 5 open questions.
+  (transcribed from elanmoc2, unverified on 0c00). Includes 6 open questions
+  and 3 since resolved.
 - `docs/CONTRIBUTING-UPSTREAM.md` (203 lines) — kernel-vs-libfprint reasoning,
   MR 330 status, 5 ranked contribution routes, umockdev recipe, licensing.
 - `README.md`, `LICENSE`, `.gitignore`.
@@ -439,11 +440,15 @@ cargo doc --no-deps                                  -> 0
 Two new tests: `bcd_decodes_observed_firmware_bytes` (pins 02/83 -> 2/83 against
 the observed capture) and `status_ff_is_rejected`.
 
-## Next safest experiment
-`sudo ./target/release/probe` — never yet run with privileges. Standard
-`GET_DESCRIPTOR(0x22)` for the 21-byte HID report descriptor (open question 1),
-string descriptors, and a passive bulk-IN listen on EP 0x81-0x84. Sends **no**
-vendor commands.
+## Next safest experiment — DONE
+`sudo ./target/release/probe` — standard `GET_DESCRIPTOR(0x22)` for the 21-byte
+HID report descriptor, string descriptors, and a passive bulk-IN listen on
+EP 0x81-0x84. Sends **no** vendor commands.
+
+Run; captured in `logs/20260906T122945Z_probe-hid-report-descriptor.txt`. It
+closed two of the questions above: the report descriptor is a single vendor
+Feature report (ID `0xBC`, 7 x 8 bits) with no Input or Output items, and every
+bulk IN endpoint times out at 300 ms unprompted.
 
 ## NOT DONE
 No opcode guessing to find what replaces `ff 12`. The brief forbids sending
@@ -465,7 +470,8 @@ easy for the author to catch.
 
 Content: hardware identification (HP Pavilion Aero 13-be2xxx, BIOS F.26),
 descriptor dump, the confirmed framing, the two deviations with raw bytes and
-timings, the count-vs-status open question, and an offer to build/capture/test.
+timings, and an offer to build/capture/test. (The count-vs-status question it
+originally raised has since been resolved — `resp[1]` is a real count.)
 
 ## To strengthen it materially
 1. `sudo pacman -S --needed glib2-devel`

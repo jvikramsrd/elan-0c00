@@ -96,6 +96,11 @@ pub const GET_FW_VER: Cmd = Cmd {
 /// Returns the number of enrolled fingers in `resp[1]`.
 ///
 /// The sensor may legally answer with zero bytes; retry up to [`MAX_RETRIES`].
+///
+/// **[OBSERVED on 04f3:0c00]** `resp[1]` is a genuine count here, not a status
+/// byte: it reads `0` with nothing enrolled and `1` with one template stored.
+/// Only those two values have been seen, so it is not confirmed to increment
+/// past one. See `docs/PROTOCOL.md`.
 pub const GET_ENROLLED_COUNT: Cmd = Cmd {
     name: "get_enrolled_count",
     cmd: &[0xff, 0x04],
@@ -109,9 +114,10 @@ pub const GET_ENROLLED_COUNT: Cmd = Cmd {
 /// Reads the stored user-id for one slot. Payload byte 3 is the finger index.
 ///
 /// **[OBSERVED on 04f3:0c00]** This device answers `40 ff` (2 bytes, status
-/// `0xff`) for every slot 0..9, rather than the documented 64-byte record —
-/// even though `get_enrolled_count` reports a non-zero count. The command
-/// appears unsupported or differently shaped on this PID. See
+/// `0xff`) for every slot 0..9, rather than the documented 64-byte record.
+/// The template really is present — [`GET_ENROLLED_COUNT`] tracks the sensor's
+/// contents correctly on this PID — so this command, not the count, is where
+/// `0c00` diverges. It appears unsupported or differently shaped here. See
 /// `docs/PROTOCOL.md`.
 pub const FINGER_INFO: Cmd = Cmd {
     name: "finger_info",

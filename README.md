@@ -60,10 +60,21 @@ independent testing on real `0c00` hardware.
 ### What has actually been confirmed on `0c00`
 
 ```
-get_enrolled_count   OUT 40 ff 04      ->  IN 40 01     ( 78 µs)   framing works
+get_enrolled_count   OUT 40 ff 04      ->  IN 40 01     ( 78 µs)   framing works; real count
 get_fw_ver           OUT 40 19         ->  IN 02 83     ( 94 µs)   no frame magic; BCD 2.83
 finger_info(0..9)    OUT 40 ff 12 NN   ->  IN 40 ff     (~170 µs)  rejected, all 10 slots
 ```
+
+The count byte is genuine, not a status: it reads `0` with nothing enrolled and
+`1` with one template stored, so the sensor holds what it reports and `ff 12`
+is the sole point of divergence.
+
+The interface also carries a stray HID descriptor despite being
+`bInterfaceClass 0xff`. Its 21-byte report descriptor is one vendor Feature
+report (ID `0xBC`, 7 x 8 bits) with **no Input or Output items**, and the device
+has no interrupt endpoint — a control-endpoint side channel, not a second data
+path, which is why the driver is right to ignore it. Unprompted, every bulk IN
+endpoint times out: the protocol is strictly request/response.
 
 And end-to-end, through the `elanmoc2` C driver on real hardware:
 
