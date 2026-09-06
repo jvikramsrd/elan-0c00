@@ -21,7 +21,7 @@ fprintd     1.94.5-2
 | # | Patch | Status |
 |---|---|---|
 | 0002 | don't wipe the sensor when a delete fails; add `delete` | applied, shipped |
-| 0003 | don't double-free the retry `GError` | applied, shipped; **runtime verification still outstanding** |
+| 0003 | don't double-free the retry `GError` | applied, shipped, **verified on hardware** |
 | 0004 | bound `finger_info` user-ID parsing by the returned length | applied, shipped, ASan-verified |
 
 All three apply cleanly and in order to a pristine `11f0316d` checkout
@@ -74,6 +74,40 @@ ASAN_OPTIONS=detect_leaks=0 ./repro 0 && ./repro2 2 && ./repro2 3 && ./fixed
 
 Raw sanitizer output: `logs/20260906T105511Z_asan-elanmoc2-user-id.txt`.
 
+## Hardware verification — patch 0003
+
+`scripts/verify-crash-test.sh`, run against the installed patched library
+(`libfprint-elanmoc2-0c00 1.94.9+11+g11f0316d-1`, = 0002+0003+0004) on the
+`04f3:0c00`:
+
+```
+   rejections (CLI):     6 / 6
+   rejections (journal): 12
+   matches:              0
+   rounds that failed to reach the sensor: 0
+   coredumps before/after: 2 / 2
+
+   VERDICT: PASSED -- 6 rejections, no new coredump.
+```
+
+Six consecutive rejected verifies with no new coredump. The unpatched build
+died after 4-5 (two coredumps, 2026-09-06 09:57: SIGSEGV then SIGABRT, both
+with `match_data_free` on the stack). The two counted coredumps are those
+pre-patch ones; the count did not move.
+
+The script refuses to report PASSED without positive proof the code path ran,
+so this is not an absence-of-crash result: 6 CLI rejections and 12 journal
+rejection events confirm the retry loop that double-freed was executed.
+
+Raw output: `logs/20260906T110112Z_verify-crash-test-PASSED.txt`.
+
+Scope note: this run exercised the **retry/rejection** path (patch 0003). It
+did **not** reach `IDENTIFY_CHECK_FINGER_INFO`, because every round was a
+no-match and that state only runs after a successful identify. Patch 0004's
+parsing fixes therefore remain sanitizer-verified rather than
+hardware-verified; what this run does show is that 0004 causes no regression
+in the verify path.
+
 ## Packaging
 
 ```sh
@@ -87,10 +121,6 @@ the binary.
 
 ## Not yet tested
 
-- **Patch 0003 on hardware.** `scripts/verify-crash-test.sh` has not produced
-  a `PASSED` verdict against the patched library. It needs six deliberately
-  rejected finger presses and cannot be automated. Until it does, the runtime
-  claim in `docs/MR330-report.md` §1 must stay unmade.
 - **Patch 0004 on hardware.** The re-enroll path that reaches
   `ENROLL_ATTEMPT_DELETE` on `0c00` has not been re-exercised since the fix.
   Doing so would previously have wiped the sensor (0002 stops that) and then

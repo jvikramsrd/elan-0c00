@@ -1,0 +1,32 @@
+# scripts/verify-crash-test.sh — run 2026-09-06 ~16:35 IST
+# Library under test: /usr/lib/libfprint-2.so.2.0.0
+#   owner: libfprint-elanmoc2-0c00 1.94.9+11+g11f0316d-1
+#   = MR !330 @ 11f0316d + patches 0002, 0003, 0004
+# Hardware: 04f3:0c00 ELAN:ARM-M4, bcdDevice 2.83
+
+== preflight ==
+  library:  /usr/lib/libfprint-2.so.2.0.0
+  owner:    libfprint-elanmoc2-0c00 1.94.9+11+g11f0316d-1
+  elanmoc2: present
+  device+print: ok
+
+== 6 verify attempts ==  (wrong finger every round)
+--- round 1/6 ---  Verify result: verify-remove-and-retry (not done)
+                   Verify result: verify-no-match (done)
+--- round 2/6 ---  Verify result: verify-no-match (done)
+--- round 3/6 ---  Verify result: verify-no-match (done)
+--- round 4/6 ---  Verify result: verify-no-match (done)
+--- round 5/6 ---  Verify result: verify-no-match (done)
+--- round 6/6 ---  Verify result: verify-no-match (done)
+
+== result ==
+   rejections (CLI):     6 / 6
+   rejections (journal): 12
+   matches:              0
+   rounds that failed to reach the sensor: 0
+   coredumps before/after: 2 / 2
+
+   VERDICT: PASSED -- 6 rejections, no new coredump.
+
+# The 2 pre-existing fprintd coredumps are from 2026-09-06 09:57 on the
+# UNPATCHED build (SIGSEGV then SIGABRT, both in match_data_free).
